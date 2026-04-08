@@ -26,7 +26,7 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -43,7 +43,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache Launch4j
         id: cache-launch4j
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: launch4j
           key: launch4j-3.50-win32
@@ -60,7 +60,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: jdk
           key: temurin-jdk-21-windows-x64
@@ -151,7 +151,7 @@ jobs:
       # Upload the installer as a workflow artifact.
       # No GitHub Release is created in the development workflow.
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-artifacts
           path: build/EncryptionWizard-*-Setup.exe
@@ -170,7 +170,7 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -187,7 +187,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: jdk
           key: temurin-jdk-21-linux-x64
@@ -282,7 +282,7 @@ jobs:
 
       # -----------------------------------------------------------------------
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-artifacts
           path: build/EncryptionWizard-*-Linux.run
