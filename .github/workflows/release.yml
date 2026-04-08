@@ -25,23 +25,40 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine version from tag
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        shell: pwsh
+        run: |
+          $jarFile = Get-ChildItem -Path "files" -Filter "EW-*.jar" | Select-Object -First 1
+          if (-not $jarFile) {
+            throw "No EW-*.jar file found in files directory"
+          }
+          # Extract version from filename pattern: EW-Unified-X.Y.Z-FIPS.jar
+          if ($jarFile.Name -match 'EW-[^-]+-([0-9]+\.[0-9]+\.[0-9]+)') {
+            $ewVersion = $Matches[1]
+          } else {
+            throw "Could not extract version from JAR filename: $($jarFile.Name)"
+          }
+          echo "EW_VERSION=$ewVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Encryption Wizard version: $ewVersion"
+
+      - name: Determine bundle version from tag
         id: version
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}' -replace '^v', ''
-          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Building version: $version"
+          $bundleVersion = '${{ github.ref_name }}' -replace '^v', ''
+          echo "BUNDLE_VERSION=$bundleVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Bundle version: $bundleVersion"
 
       # -----------------------------------------------------------------------
       - name: Cache Launch4j
         id: cache-launch4j
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: launch4j
           key: launch4j-3.50-win32
@@ -59,7 +76,7 @@ jobs:
       # Full JDK required for jdeps and jlink (not included in a plain JRE).
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: jdk
           key: temurin-jdk-21-windows-x64
@@ -119,15 +136,17 @@ jobs:
       - name: Update version info in Launch4j config
         shell: pwsh
         run: |
-          $version    = '${{ steps.version.outputs.VERSION }}'
-          $v4         = "$version.0"
-          $content    = Get-Content -Path config/launch4j.xml -Raw
-          $content    = $content -replace '<fileVersion>[^<]+</fileVersion>',       "<fileVersion>$v4</fileVersion>"
-          $content    = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',  "<txtFileVersion>$version</txtFileVersion>"
-          $content    = $content -replace '<productVersion>[^<]+</productVersion>',  "<productVersion>$v4</productVersion>"
-          $content    = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          $ewVersion     = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
+          $v4            = "$bundleVersion.0"
+          $content       = Get-Content -Path config/launch4j.xml -Raw
+          $content       = $content -replace '<fileVersion>[^<]+</fileVersion>',       "<fileVersion>$v4</fileVersion>"
+          $content       = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',  "<txtFileVersion>$combinedVersion</txtFileVersion>"
+          $content       = $content -replace '<productVersion>[^<]+</productVersion>',  "<productVersion>$v4</productVersion>"
+          $content       = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$combinedVersion</txtProductVersion>"
           Set-Content -Path config/launch4j.xml -Value $content
-          Write-Host "Version info set to $version"
+          Write-Host "Version info set to $combinedVersion"
 
       # -----------------------------------------------------------------------
       - name: Build EXE with Launch4j
@@ -143,17 +162,52 @@ jobs:
       - name: Build installer with Inno Setup
         shell: pwsh
         run: |
-          $version = '${{ steps.version.outputs.VERSION }}'
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$version config\installer.iss
+          $ewVersion = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$combinedVersion config\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
-          Write-Host "Installer created: build\EncryptionWizard-$version-Setup.exe"
+          Write-Host "Installer created: build\EncryptionWizard-$combinedVersion-Setup.exe"
+
+      # -----------------------------------------------------------------------
+      - name: Build Windows portable archive (ZIP)
+        shell: pwsh
+        run: |
+          $ewVersion     = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
+          $archiveDir = 'archive-win'
+          New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
+
+          # Application EXE (JAR embedded by Launch4j)
+          Copy-Item "build\EncryptionWizard.exe" "$archiveDir\"
+
+          # Bundled JRE
+          Copy-Item -Recurse "jre" "$archiveDir\jre"
+
+          # Documentation and support files
+          Copy-Item "files\Encryption Wizard User Guide v405.docx"             "$archiveDir\"
+          Copy-Item "files\Encryption Wizard User Guide v405.pdf"              "$archiveDir\"
+          Copy-Item "files\Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$archiveDir\"
+          Copy-Item "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"         "$archiveDir\"
+          Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
+
+          Compress-Archive -Path "$archiveDir\*" `
+            -DestinationPath "build\EncryptionWizard-${combinedVersion}-Windows.zip" `
+            -CompressionLevel Optimal
+          Remove-Item -Recurse -Force $archiveDir
+
+          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-${combinedVersion}-Windows.zip").Length / 1MB, 1)
+          Write-Host "Windows archive created: build\EncryptionWizard-${combinedVersion}-Windows.zip ($sizeMB MB)"
 
       # -----------------------------------------------------------------------
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-artifacts
-          path: build/EncryptionWizard-*-Setup.exe
+          path: |
+            build/EncryptionWizard-*-Setup.exe
+            build/EncryptionWizard-*-Windows.zip
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -169,23 +223,40 @@ jobs:
     steps:
       # -----------------------------------------------------------------------
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine version from tag
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        run: |
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "Error: No EW-*.jar file found in files directory" >&2
+            exit 1
+          fi
+          # Extract version from filename pattern: EW-Unified-X.Y.Z-FIPS.jar
+          EW_VERSION=$(basename "$JAR_FILE" | sed -n 's/EW-[^-]*-\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          if [ -z "$EW_VERSION" ]; then
+            echo "Error: Could not extract version from JAR filename: $(basename "$JAR_FILE")" >&2
+            exit 1
+          fi
+          echo "EW_VERSION=$EW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Encryption Wizard version: $EW_VERSION"
+
+      - name: Determine bundle version from tag
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          BUNDLE_VERSION="${GITHUB_REF_NAME#v}"
+          echo "BUNDLE_VERSION=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
           echo "IMAGE_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
+          echo "Bundle version: $BUNDLE_VERSION"
 
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: jdk
           key: temurin-jdk-21-linux-x64
@@ -231,7 +302,9 @@ jobs:
 
       - name: Build Linux installer (makeself)
         run: |
-          VERSION='${{ steps.version.outputs.VERSION }}'
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
           mkdir -p build payload
 
           cp files/EW-Unified-4.0.005-FIPS.jar payload/
@@ -249,12 +322,48 @@ jobs:
             --nox11 \
             --sha256 \
             payload/ \
-            "build/EncryptionWizard-${VERSION}-Linux.run" \
-            "Encryption Wizard ${VERSION}" \
+            "build/EncryptionWizard-${COMBINED_VERSION}-Linux.run" \
+            "Encryption Wizard ${COMBINED_VERSION}" \
             ./run.sh
 
           rm -rf payload
-          echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+          echo "Linux installer: $(du -sh "build/EncryptionWizard-${COMBINED_VERSION}-Linux.run" | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Build Linux portable archive (tar.gz)
+        run: |
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
+          ARCHIVE_DIR='archive-linux'
+          mkdir -p "$ARCHIVE_DIR"
+
+          # Application JAR
+          cp files/EW-Unified-4.0.005-FIPS.jar "$ARCHIVE_DIR/"
+
+          # Bundled JRE
+          cp -r jre/ "$ARCHIVE_DIR/jre/"
+
+          # Documentation and support files
+          cp "files/Encryption Wizard User Guide v405.docx"             "$ARCHIVE_DIR/"
+          cp "files/Encryption Wizard User Guide v405.pdf"              "$ARCHIVE_DIR/"
+          cp "files/Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$ARCHIVE_DIR/"
+          cp "files/Encryption Wizard homepage.url"                     "$ARCHIVE_DIR/"
+
+          # Launcher script
+          cat > "$ARCHIVE_DIR/run.sh" << 'LAUNCHER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          JAR=$(ls "$DIR"/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR" ]; then echo "Error: No EW-*.jar found in $DIR" >&2; exit 1; fi
+          exec "$DIR/jre/bin/java" -jar "$JAR" "$@"
+          LAUNCHER
+          chmod +x "$ARCHIVE_DIR/run.sh"
+
+          tar -czf "build/EncryptionWizard-${COMBINED_VERSION}-Linux.tar.gz" -C "$ARCHIVE_DIR" .
+          rm -rf "$ARCHIVE_DIR"
+
+          echo "Linux archive: $(du -sh "build/EncryptionWizard-${COMBINED_VERSION}-Linux.tar.gz" | cut -f1)"
 
       # -----------------------------------------------------------------------
       # Build and push the OCI container image to GitHub Container Registry.
@@ -277,21 +386,25 @@ jobs:
           file: Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ steps.version.outputs.IMAGE_OWNER }}/encryption-wizard:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ steps.version.outputs.IMAGE_OWNER }}/encryption-wizard:${{ steps.version.outputs.BUNDLE_VERSION }}
             ghcr.io/${{ steps.version.outputs.IMAGE_OWNER }}/encryption-wizard:latest
           labels: |
             org.opencontainers.image.title=Encryption Wizard
             org.opencontainers.image.description=FIPS-compliant encryption application
-            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.version=EW-${{ steps.ew-version.outputs.EW_VERSION }}_Bundle-${{ steps.version.outputs.BUNDLE_VERSION }}
+            org.opencontainers.image.ew-version=${{ steps.ew-version.outputs.EW_VERSION }}
+            org.opencontainers.image.bundle-version=${{ steps.version.outputs.BUNDLE_VERSION }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
       # -----------------------------------------------------------------------
       - name: Upload Linux artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-artifacts
-          path: build/EncryptionWizard-*-Linux.run
+          path: |
+            build/EncryptionWizard-*-Linux.run
+            build/EncryptionWizard-*-Linux.tar.gz
           retention-days: 1
 
   # ---------------------------------------------------------------------------
@@ -303,13 +416,46 @@ jobs:
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      ew_version: ${{ steps.ew-version.outputs.EW_VERSION }}
+      bundle_version: ${{ steps.version.outputs.BUNDLE_VERSION }}
+      combined_version: ${{ steps.combined.outputs.COMBINED_VERSION }}
     steps:
-      - name: Determine version from tag
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        run: |
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "Error: No EW-*.jar file found in files directory" >&2
+            exit 1
+          fi
+          EW_VERSION=$(basename "$JAR_FILE" | sed -n 's/EW-[^-]*-\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          if [ -z "$EW_VERSION" ]; then
+            echo "Error: Could not extract version from JAR filename: $(basename "$JAR_FILE")" >&2
+            exit 1
+          fi
+          echo "EW_VERSION=$EW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Encryption Wizard version: $EW_VERSION"
+
+      - name: Determine bundle version from tag
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          BUNDLE_VERSION="${GITHUB_REF_NAME#v}"
+          echo "BUNDLE_VERSION=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bundle version: $BUNDLE_VERSION"
+
+      - name: Create combined version
+        id: combined
+        run: |
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
+          echo "COMBINED_VERSION=$COMBINED_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Combined version: $COMBINED_VERSION"
 
   # ---------------------------------------------------------------------------
   # Job 4: GraalVM Native Executables (Linux, macOS, Windows)
@@ -321,7 +467,8 @@ jobs:
       contents: read
     uses: ./.github/workflows/native-build.yml
     with:
-      version: ${{ needs.compute-version.outputs.version }}
+      ew_version: ${{ needs.compute-version.outputs.ew_version }}
+      bundle_version: ${{ needs.compute-version.outputs.bundle_version }}
       is_release: true
     secrets: inherit
 
@@ -330,46 +477,39 @@ jobs:
   # ---------------------------------------------------------------------------
   publish-release:
     name: Publish GitHub Release
-    needs: [build-windows, build-linux, build-native]
+    needs: [build-windows, build-linux, build-native, compute-version]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
       # -----------------------------------------------------------------------
-      - name: Determine version from tag
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------------------------------------------------
       - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-artifacts
           path: release-artifacts
 
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-artifacts
           path: release-artifacts
 
       - name: Download Linux native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-native-artifacts
           path: release-artifacts
 
       - name: Download macOS ARM64 native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: macos-arm64-native-artifacts
           path: release-artifacts
 
       - name: Download Windows native artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: windows-native-artifacts
           path: release-artifacts
@@ -379,7 +519,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: Encryption Wizard v${{ steps.version.outputs.VERSION }}
+          name: Encryption Wizard ${{ needs.compute-version.outputs.combined_version }}
           generate_release_notes: true
           draft: false
           prerelease: false

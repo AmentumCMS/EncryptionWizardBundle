@@ -10,11 +10,14 @@ on:
       - development
   workflow_dispatch:
     inputs:
-      version:
-        description: 'Version string for the build (e.g. 1.0.0 or 0.0.0-dev.abc1234)'
-        required: false
+      ew_version:
+        description: 'Encryption Wizard version (e.g. 4.0.005)'
+        required: true
         type: string
-        default: '0.0.0-test'
+      bundle_version:
+        description: 'Bundle version string (e.g. 1.0.0 or 0.0.0-dev.abc1234)'
+        required: true
+        type: string
       is_release:
         description: 'Whether this is a release build (affects artifact retention: 1 day vs 14 days)'
         required: false
@@ -22,8 +25,12 @@ on:
         default: false
   workflow_call:
     inputs:
-      version:
-        description: 'Version string for the build'
+      ew_version:
+        description: 'Encryption Wizard version'
+        required: true
+        type: string
+      bundle_version:
+        description: 'Bundle version string'
         required: true
         type: string
       is_release:
@@ -44,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -63,10 +70,13 @@ jobs:
 
       - name: Build native executable
         run: |
-          VERSION="${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
+          EW_VERSION='${{ inputs.ew_version }}'
+          BUNDLE_VERSION='${{ inputs.bundle_version }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
           mkdir -p build
 
           echo "Building native executable for Linux..."
+          echo "EW Version: $EW_VERSION, Bundle Version: $BUNDLE_VERSION"
           native-image \
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -H:Name=encryption-wizard \
@@ -86,11 +96,11 @@ jobs:
           # Create distributable archive
           cd build
           chmod +x encryption-wizard
-          tar -czvf "EncryptionWizard-${VERSION}-linux-x64-native.tar.gz" encryption-wizard
+          tar -czvf "EncryptionWizard-${COMBINED_VERSION}-linux-x64-native.tar.gz" encryption-wizard
           rm encryption-wizard
 
       - name: Upload Linux native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-native-artifacts
           path: build/EncryptionWizard-*-linux-x64-native.tar.gz
@@ -107,7 +117,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -126,10 +136,13 @@ jobs:
 
       - name: Build native executable
         run: |
-          VERSION="${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
+          EW_VERSION='${{ inputs.ew_version }}'
+          BUNDLE_VERSION='${{ inputs.bundle_version }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
           mkdir -p build
 
           echo "Building native executable for macOS ARM64..."
+          echo "EW Version: $EW_VERSION, Bundle Version: $BUNDLE_VERSION"
           native-image \
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -H:Name=encryption-wizard \
@@ -142,11 +155,11 @@ jobs:
           # Create distributable archive
           cd build
           chmod +x encryption-wizard
-          tar -czvf "EncryptionWizard-${VERSION}-macos-arm64-native.tar.gz" encryption-wizard
+          tar -czvf "EncryptionWizard-${COMBINED_VERSION}-macos-arm64-native.tar.gz" encryption-wizard
           rm encryption-wizard
 
       - name: Upload macOS ARM64 native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-arm64-native-artifacts
           path: build/EncryptionWizard-*-macos-arm64-native.tar.gz
@@ -163,7 +176,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
@@ -187,10 +200,13 @@ jobs:
       - name: Build native executable
         shell: pwsh
         run: |
-          $version = "${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
+          $ewVersion = '${{ inputs.ew_version }}'
+          $bundleVersion = '${{ inputs.bundle_version }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
           New-Item -ItemType Directory -Force -Path build | Out-Null
 
           Write-Host "Building native executable for Windows..."
+          Write-Host "EW Version: $ewVersion, Bundle Version: $bundleVersion"
           native-image `
             -jar files/EW-Unified-4.0.005-FIPS.jar `
             -H:Name=encryption-wizard `
@@ -205,11 +221,11 @@ jobs:
           }
 
           # Create distributable archive
-          Compress-Archive -Path build\encryption-wizard.exe -DestinationPath "build\EncryptionWizard-${version}-windows-x64-native.zip"
+          Compress-Archive -Path build\encryption-wizard.exe -DestinationPath "build\EncryptionWizard-${combinedVersion}-windows-x64-native.zip"
           Remove-Item build\encryption-wizard.exe
 
       - name: Upload Windows native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-native-artifacts
           path: build/EncryptionWizard-*-windows-x64-native.zip
