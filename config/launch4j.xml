@@ -6,17 +6,23 @@
     JAR file:    files/EW-Unified-4.0.005-FIPS.jar  (repo root)
     Output EXE:  build/EncryptionWizard.exe
 
-    The bundled JRE is expected at a sub-directory named "jre/" relative to
-    the EXE at runtime.  The CI workflows download and place the JRE there
-    automatically before running the installer.
+    The JAR file is NOT embedded in the EXE - it must be placed alongside
+    the EXE at runtime. The bundled JRE is expected at a sub-directory
+    named "jre/" relative to the EXE at runtime. The CI workflows download
+    and place the JRE there automatically before running the installer.
+
+    Icon:        build/icon.ico  (extracted from JAR by CI workflow)
   -->
 
-  <!-- Embed the JAR inside the EXE -->
-  <dontWrapJar>false</dontWrapJar>
+  <!-- Do NOT embed the JAR inside the EXE - keep them separate -->
+  <dontWrapJar>true</dontWrapJar>
   <headerType>gui</headerType>
 
-  <jar>../files/EW-Unified-4.0.005-FIPS.jar</jar>
+  <jar>EW-Unified-4.0.005-FIPS.jar</jar>
   <outfile>../build/EncryptionWizard.exe</outfile>
+
+  <!-- Application icon (extracted from JAR by CI workflow) -->
+  <icon>../build/icon.ico</icon>
 
   <errTitle>Encryption Wizard</errTitle>
   <cmdLine></cmdLine>

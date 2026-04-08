@@ -131,6 +131,60 @@ jobs:
         run: New-Item -ItemType Directory -Force -Path build | Out-Null
 
       # -----------------------------------------------------------------------
+      - name: Extract graphics from JAR
+        shell: pwsh
+        run: |
+          # Extract icon and splash image from JAR
+          $jarFile = Get-ChildItem -Path "files" -Filter "EW-*.jar" | Select-Object -First 1
+          Expand-Archive -Path $jarFile.FullName -DestinationPath jar-extract -Force
+
+          # Copy the icon file (already in ICO format)
+          Copy-Item "jar-extract/res/images/icon" "build/icon.ico"
+          Write-Host "Extracted icon.ico"
+
+          # Convert splash PNG to BMP for Inno Setup (WizardImageFile requires BMP)
+          # Using PowerShell with .NET System.Drawing to convert
+          Add-Type -AssemblyName System.Drawing
+          $splashPng = [System.Drawing.Image]::FromFile("$PWD/jar-extract/res/images/splash")
+
+          # Create the large wizard image (164x314 is Inno Setup's expected size for modern style)
+          $wizardBmp = New-Object System.Drawing.Bitmap(164, 314)
+          $graphics = [System.Drawing.Graphics]::FromImage($wizardBmp)
+          $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+          $graphics.Clear([System.Drawing.Color]::White)
+          # Scale and center the splash image
+          $scale = [Math]::Min(164 / $splashPng.Width, 314 / $splashPng.Height)
+          $newWidth = [int]($splashPng.Width * $scale)
+          $newHeight = [int]($splashPng.Height * $scale)
+          $x = [int]((164 - $newWidth) / 2)
+          $y = [int]((314 - $newHeight) / 2)
+          $graphics.DrawImage($splashPng, $x, $y, $newWidth, $newHeight)
+          $wizardBmp.Save("build/splash.bmp", [System.Drawing.Imaging.ImageFormat]::Bmp)
+          $graphics.Dispose()
+          $wizardBmp.Dispose()
+          Write-Host "Created splash.bmp (164x314)"
+
+          # Create the small wizard image (55x58 for WizardSmallImageFile)
+          $smallBmp = New-Object System.Drawing.Bitmap(55, 58)
+          $graphics = [System.Drawing.Graphics]::FromImage($smallBmp)
+          $graphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+          $graphics.Clear([System.Drawing.Color]::White)
+          $scale = [Math]::Min(55 / $splashPng.Width, 58 / $splashPng.Height)
+          $newWidth = [int]($splashPng.Width * $scale)
+          $newHeight = [int]($splashPng.Height * $scale)
+          $x = [int]((55 - $newWidth) / 2)
+          $y = [int]((58 - $newHeight) / 2)
+          $graphics.DrawImage($splashPng, $x, $y, $newWidth, $newHeight)
+          $smallBmp.Save("build/icon-55x58.bmp", [System.Drawing.Imaging.ImageFormat]::Bmp)
+          $graphics.Dispose()
+          $smallBmp.Dispose()
+          $splashPng.Dispose()
+          Write-Host "Created icon-55x58.bmp (55x58)"
+
+          # Cleanup
+          Remove-Item -Recurse -Force jar-extract
+
+      # -----------------------------------------------------------------------
       - name: Update version info in Launch4j config
         shell: pwsh
         run: |
@@ -178,8 +232,11 @@ jobs:
           $archiveDir = 'archive-win'
           New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
 
-          # Application EXE (JAR embedded by Launch4j)
+          # Application EXE (launcher)
           Copy-Item "build\EncryptionWizard.exe" "$archiveDir\"
+
+          # Application JAR (must be alongside the EXE)
+          Copy-Item "files\EW-Unified-*.jar" "$archiveDir\"
 
           # Bundled JRE
           Copy-Item -Recurse "jre" "$archiveDir\jre"
