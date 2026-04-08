@@ -1,0 +1,13 @@
+# Exclude everything that is not needed inside the container image.
+# The Docker build only needs: jre/ (jlink output) and files/*.jar
+
+.git
+jdk
+launch4j
+build
+config
+payload
+staging
+*.zip
+*.tar.gz
+*.7z

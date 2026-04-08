@@ -1,0 +1,283 @@
+name: Development Build
+
+# Runs on every push to the development branch and on manual dispatch.
+# Performs all the same build steps as the release workflow but DOES NOT
+# create a GitHub Release – artifacts are uploaded to the workflow run
+# instead so they can be downloaded and tested directly.
+# The container image is pushed to ghcr.io with a dev-<sha> tag.
+
+on:
+  push:
+    branches:
+      - development
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job 1: Windows – Inno Setup installer
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Determine build version
+        id: version
+        shell: pwsh
+        run: |
+          $shortSha = '${{ github.sha }}'.Substring(0, 7)
+          $version  = "0.0.0-dev.$shortSha"
+          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Build version: $version"
+
+      # -----------------------------------------------------------------------
+      - name: Cache Launch4j
+        id: cache-launch4j
+        uses: actions/cache@v4
+        with:
+          path: launch4j
+          key: launch4j-3.50-win32
+
+      - name: Download Launch4j
+        if: steps.cache-launch4j.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = 'https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-win32.zip/download'
+          Invoke-WebRequest -Uri $url -OutFile launch4j.zip -UserAgent 'Wget/1.21'
+          Expand-Archive -Path launch4j.zip -DestinationPath .
+          Remove-Item launch4j.zip
+
+      # -----------------------------------------------------------------------
+      - name: Cache JDK (Temurin 21)
+        id: cache-jdk
+        uses: actions/cache@v4
+        with:
+          path: jdk
+          key: temurin-jdk-21-windows-x64
+
+      - name: Download JDK (Eclipse Temurin 21)
+        if: steps.cache-jdk.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $jdkUrl = 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse'
+          Invoke-WebRequest -Uri $jdkUrl -OutFile jdk.zip
+          Expand-Archive -Path jdk.zip -DestinationPath jdk-temp
+          $jdkDir = Get-ChildItem -Path jdk-temp -Directory | Select-Object -First 1
+          Move-Item -Path $jdkDir.FullName -Destination jdk
+          Remove-Item -Recurse -Force jdk-temp
+          Remove-Item jdk.zip
+
+      # -----------------------------------------------------------------------
+      - name: Build minimal JRE with jlink
+        shell: pwsh
+        run: |
+          $jdepsExe = '.\jdk\bin\jdeps.exe'
+          $jlinkExe = '.\jdk\bin\jlink.exe'
+
+          # Discover required modules dynamically from the JAR
+          $modules = & $jdepsExe --multi-release 21 --ignore-missing-deps `
+            --print-module-deps files/EW-Unified-4.0.005-FIPS.jar
+          if ($LASTEXITCODE -ne 0) { throw "jdeps failed with exit code $LASTEXITCODE" }
+          Write-Host "Modules required by JAR: $modules"
+
+          # Build a minimal JRE into the jre/ directory
+          & $jlinkExe `
+            --module-path ".\jdk\jmods" `
+            --add-modules $modules `
+            --strip-debug `
+            --no-man-pages `
+            --no-header-files `
+            --compress zip-6 `
+            --output jre
+          if ($LASTEXITCODE -ne 0) { throw "jlink failed with exit code $LASTEXITCODE" }
+
+          $sizeMB = [math]::Round((Get-ChildItem -Recurse jre | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+          Write-Host "Minimal JRE created in jre\ ($sizeMB MB)"
+
+      # -----------------------------------------------------------------------
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # -----------------------------------------------------------------------
+      - name: Prepare build directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path build | Out-Null
+
+      # -----------------------------------------------------------------------
+      - name: Update version info in Launch4j config
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.VERSION }}'
+          # Use a safe four-part version for the Windows EXE manifest (dev builds use 0.0.0.0)
+          $v4      = '0.0.0.0'
+          $content = Get-Content -Path config/launch4j.xml -Raw
+          $content = $content -replace '<fileVersion>[^<]+</fileVersion>',           "<fileVersion>$v4</fileVersion>"
+          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',      "<txtFileVersion>$version</txtFileVersion>"
+          $content = $content -replace '<productVersion>[^<]+</productVersion>',      "<productVersion>$v4</productVersion>"
+          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          Set-Content -Path config/launch4j.xml -Value $content
+          Write-Host "Version info set to $version"
+
+      # -----------------------------------------------------------------------
+      - name: Build EXE with Launch4j
+        shell: pwsh
+        run: |
+          & .\launch4j\launch4jc.exe config\launch4j.xml
+          if (-not (Test-Path 'build\EncryptionWizard.exe')) {
+            throw "Launch4j did not produce build\EncryptionWizard.exe"
+          }
+          Write-Host "EXE created: build\EncryptionWizard.exe"
+
+      # -----------------------------------------------------------------------
+      - name: Build installer with Inno Setup
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.VERSION }}'
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$version config\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          Write-Host "Installer created in build\"
+
+      # -----------------------------------------------------------------------
+      # Upload the installer as a workflow artifact.
+      # No GitHub Release is created in the development workflow.
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: build/EncryptionWizard-*-Setup.exe
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Linux – makeself installer + OCI container image
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build Linux installer and container image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Determine build version
+        id: version
+        run: |
+          SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
+          echo "VERSION=0.0.0-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Build version: 0.0.0-dev.${SHORT_SHA}"
+
+      # -----------------------------------------------------------------------
+      - name: Cache JDK (Temurin 21)
+        id: cache-jdk
+        uses: actions/cache@v4
+        with:
+          path: jdk
+          key: temurin-jdk-21-linux-x64
+
+      - name: Download JDK (Eclipse Temurin 21)
+        if: steps.cache-jdk.outputs.cache-hit != 'true'
+        run: |
+          curl -fL 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse' \
+            -o jdk.tar.gz
+          mkdir jdk-temp
+          tar -xzf jdk.tar.gz -C jdk-temp
+          mv "jdk-temp/$(ls jdk-temp)" jdk
+          rmdir jdk-temp
+          rm jdk.tar.gz
+
+      # -----------------------------------------------------------------------
+      - name: Build minimal JRE with jlink
+        run: |
+          MODULES=$(./jdk/bin/jdeps \
+            --multi-release 21 \
+            --ignore-missing-deps \
+            --print-module-deps \
+            files/EW-Unified-4.0.005-FIPS.jar)
+          echo "Modules required by JAR: $MODULES"
+
+          ./jdk/bin/jlink \
+            --module-path ./jdk/jmods \
+            --add-modules "$MODULES" \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress zip-6 \
+            --output jre
+
+          echo "Minimal JRE created: $(du -sh jre | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Install makeself
+        run: sudo apt-get install -y makeself
+
+      - name: Build Linux installer (makeself)
+        run: |
+          VERSION='${{ steps.version.outputs.VERSION }}'
+          mkdir -p build payload
+
+          cp files/EW-Unified-4.0.005-FIPS.jar payload/
+          cp -r jre/ payload/jre/
+
+          # Launcher script embedded inside the makeself archive
+          cat > payload/run.sh << 'LAUNCHER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec "$DIR/jre/bin/java" -jar "$DIR/EW-Unified-4.0.005-FIPS.jar" "$@"
+          LAUNCHER
+          chmod +x payload/run.sh
+
+          makeself \
+            --nox11 \
+            --sha256 \
+            payload/ \
+            "build/EncryptionWizard-${VERSION}-Linux.run" \
+            "Encryption Wizard ${VERSION}" \
+            ./run.sh
+
+          rm -rf payload
+          echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/encryption-wizard:${{ steps.version.outputs.IMAGE_TAG }}
+          labels: |
+            org.opencontainers.image.title=Encryption Wizard
+            org.opencontainers.image.description=FIPS-compliant encryption application
+            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # -----------------------------------------------------------------------
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: build/EncryptionWizard-*-Linux.run
+          retention-days: 14

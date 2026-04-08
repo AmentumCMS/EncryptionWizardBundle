@@ -1,0 +1,16 @@
+# Build output directory
+/build/
+
+# Downloaded tools, JDK, and JRE (fetched by CI workflows)
+/launch4j/
+/launch4j.zip
+/jdk/
+/jdk.zip
+/jdk-temp/
+/jre/
+/jre.zip
+/jre-temp/
+
+# Staging directories created during monolith builds
+/staging/
+/payload/
