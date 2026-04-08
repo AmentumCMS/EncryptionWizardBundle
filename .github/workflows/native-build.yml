@@ -4,6 +4,18 @@ name: Build Native Executables (GraalVM)
 # Called by both dev.yml (for pre-release builds) and release.yml (for release builds).
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string for the build (e.g. 1.0.0 or 0.0.0-dev.abc1234)'
+        required: false
+        type: string
+        default: '0.0.0-test'
+      is_release:
+        description: 'Whether this is a release build (affects artifact retention: 1 day vs 14 days)'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       version:
