@@ -10,3 +10,7 @@
 /jre/
 /jre.zip
 /jre-temp/
+
+# Staging directories created during monolith builds
+/staging/
+/payload/

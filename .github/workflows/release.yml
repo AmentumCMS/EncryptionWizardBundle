@@ -1,8 +1,10 @@
 name: Build and Release
 
 # Runs on version tags pushed to the main branch (e.g. v1.0.0).
-# Builds the Launch4j EXE launcher, bundles the JRE, creates an Inno Setup
-# installer, and publishes a GitHub Release with the installer as an artifact.
+# Produces:
+#   - Windows: Inno Setup installer + 7-Zip SFX self-contained monolith EXE
+#   - Linux:   makeself self-extracting monolith + OCI container image
+# All artifacts are attached to the GitHub Release.
 
 on:
   push:
@@ -10,11 +12,14 @@ on:
       - 'v[0-9]+.[0-9]+.[0-9]+'
 
 jobs:
-  build-and-release:
-    name: Build installer and publish release
+  # ---------------------------------------------------------------------------
+  # Job 1: Windows – Inno Setup installer + 7-Zip SFX monolith EXE
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows installer and monolith
     runs-on: windows-latest
     permissions:
-      contents: write   # required to create GitHub Releases
+      contents: read
 
     steps:
       # -----------------------------------------------------------------------
@@ -48,9 +53,7 @@ jobs:
           Remove-Item launch4j.zip
 
       # -----------------------------------------------------------------------
-      # We need a full JDK (not just a JRE) so that jdeps and jlink are available.
-      # The JDK is used only at build time; the installer ships the stripped-down
-      # custom JRE produced by jlink, not the full JDK.
+      # Full JDK required for jdeps and jlink (not included in a plain JRE).
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
         uses: actions/cache@v4
@@ -143,7 +146,220 @@ jobs:
           Write-Host "Installer created: build\EncryptionWizard-$version-Setup.exe"
 
       # -----------------------------------------------------------------------
-      - name: Create GitHub Release and upload installer
+      # Bundle the Launch4j EXE + jlink JRE into a single self-extracting EXE
+      # via the 7-Zip SFX module (7zSD.sfx from the 7-Zip extra package).
+      # When the monolith is run, it silently extracts to %TEMP%\EncryptionWizard
+      # and launches EncryptionWizard.exe – no installation required.
+      - name: Download 7-Zip extra (SFX module)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://7-zip.org/a/7z2409-extra.7z' -OutFile 7z-extra.7z
+          & 'C:\Program Files\7-Zip\7z.exe' x 7z-extra.7z 7zSD.sfx -o7z-extra -y
+          Remove-Item 7z-extra.7z
+
+      - name: Build Windows monolith (7-Zip SFX)
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.VERSION }}'
+
+          # Stage EXE + JRE together so the archive contains flat relative paths
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          Copy-Item build\EncryptionWizard.exe staging\
+          Copy-Item jre staging\jre -Recurse
+
+          # Create the 7z archive from the staging directory
+          Push-Location staging
+          & 'C:\Program Files\7-Zip\7z.exe' a -t7z -mx=9 -mmt=on ..\build\monolith.7z *
+          Pop-Location
+          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
+          Remove-Item -Recurse -Force staging
+
+          # Concatenate: SFX module + config header + archive → single EXE
+          cmd /c "copy /b `"7z-extra\7zSD.sfx`" + `"config\7zip-sfx.cfg`" + `"build\monolith.7z`" `"build\EncryptionWizard-$version-Monolith.exe`""
+          if ($LASTEXITCODE -ne 0) { throw "SFX concatenation failed" }
+          Remove-Item build\monolith.7z
+
+          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-$version-Monolith.exe").Length / 1MB, 1)
+          Write-Host "Windows monolith: build\EncryptionWizard-$version-Monolith.exe ($sizeMB MB)"
+
+      # -----------------------------------------------------------------------
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-artifacts
+          path: |
+            build/EncryptionWizard-*-Setup.exe
+            build/EncryptionWizard-*-Monolith.exe
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Linux – makeself self-extracting monolith + OCI container image
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build Linux monolith and container image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Determine version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building version: $VERSION"
+
+      # -----------------------------------------------------------------------
+      - name: Cache JDK (Temurin 21)
+        id: cache-jdk
+        uses: actions/cache@v4
+        with:
+          path: jdk
+          key: temurin-jdk-21-linux-x64
+
+      - name: Download JDK (Eclipse Temurin 21)
+        if: steps.cache-jdk.outputs.cache-hit != 'true'
+        run: |
+          curl -fL 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse' \
+            -o jdk.tar.gz
+          mkdir jdk-temp
+          tar -xzf jdk.tar.gz -C jdk-temp
+          mv "jdk-temp/$(ls jdk-temp)" jdk
+          rmdir jdk-temp
+          rm jdk.tar.gz
+
+      # -----------------------------------------------------------------------
+      - name: Build minimal JRE with jlink
+        run: |
+          MODULES=$(./jdk/bin/jdeps \
+            --multi-release 21 \
+            --ignore-missing-deps \
+            --print-module-deps \
+            files/EW-Unified-4.0.005-FIPS.jar)
+          echo "Modules required by JAR: $MODULES"
+
+          ./jdk/bin/jlink \
+            --module-path ./jdk/jmods \
+            --add-modules "$MODULES" \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress zip-6 \
+            --output jre
+
+          echo "Minimal JRE created: $(du -sh jre | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      # Package the JAR + jlink JRE + launcher script into a single
+      # self-extracting shell archive using makeself.  The result runs on any
+      # glibc-based Linux without pre-installed Java.
+      - name: Install makeself
+        run: sudo apt-get install -y makeself
+
+      - name: Build Linux monolith (makeself)
+        run: |
+          VERSION='${{ steps.version.outputs.VERSION }}'
+          mkdir -p build payload
+
+          cp files/EW-Unified-4.0.005-FIPS.jar payload/
+          cp -r jre/ payload/jre/
+
+          # Launcher script embedded inside the makeself archive
+          cat > payload/run.sh << 'LAUNCHER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec "$DIR/jre/bin/java" -jar "$DIR/EW-Unified-4.0.005-FIPS.jar" "$@"
+          LAUNCHER
+          chmod +x payload/run.sh
+
+          makeself \
+            --nox11 \
+            --sha256 \
+            payload/ \
+            "build/EncryptionWizard-${VERSION}-Linux.run" \
+            "Encryption Wizard ${VERSION}" \
+            ./run.sh
+
+          rm -rf payload
+          echo "Linux monolith: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      # Build and push the OCI container image to GitHub Container Registry.
+      # The jlink JRE created above is used as the container runtime.
+      # CMD defaults to -h so the container prints help when run with no args.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/encryption-wizard:${{ steps.version.outputs.VERSION }}
+            ghcr.io/${{ github.repository_owner }}/encryption-wizard:latest
+          labels: |
+            org.opencontainers.image.title=Encryption Wizard
+            org.opencontainers.image.description=FIPS-compliant encryption application
+            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # -----------------------------------------------------------------------
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: build/EncryptionWizard-*-Linux.run
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Publish GitHub Release with all platform artifacts
+  # ---------------------------------------------------------------------------
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Determine version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # -----------------------------------------------------------------------
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-artifacts
+          path: release-artifacts
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-artifacts
+          path: release-artifacts
+
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -151,4 +367,4 @@ jobs:
           generate_release_notes: true
           draft: false
           prerelease: false
-          files: build/EncryptionWizard-*-Setup.exe
+          files: release-artifacts/*

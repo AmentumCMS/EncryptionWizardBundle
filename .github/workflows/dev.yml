@@ -4,6 +4,7 @@ name: Development Build
 # Performs all the same build steps as the release workflow but DOES NOT
 # create a GitHub Release – artifacts are uploaded to the workflow run
 # instead so they can be downloaded and tested directly.
+# The container image is pushed to ghcr.io with a dev-<sha> tag.
 
 on:
   push:
@@ -12,11 +13,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build installer (no release)
+  # ---------------------------------------------------------------------------
+  # Job 1: Windows – Inno Setup installer + 7-Zip SFX monolith EXE
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: Build Windows installer and monolith
     runs-on: windows-latest
     permissions:
-      contents: read    # no release publishing needed
+      contents: read
 
     steps:
       # -----------------------------------------------------------------------
@@ -51,9 +55,6 @@ jobs:
           Remove-Item launch4j.zip
 
       # -----------------------------------------------------------------------
-      # We need a full JDK (not just a JRE) so that jdeps and jlink are available.
-      # The JDK is used only at build time; the installer ships the stripped-down
-      # custom JRE produced by jlink, not the full JDK.
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
         uses: actions/cache@v4
@@ -74,9 +75,6 @@ jobs:
           Remove-Item jdk.zip
 
       # -----------------------------------------------------------------------
-      # Determine the exact set of modules the JAR requires (via jdeps) and use
-      # jlink to produce a minimal custom JRE containing only those modules.
-      # This is significantly smaller than a full JRE (~30-40 MB vs ~180 MB).
       - name: Build minimal JRE with jlink
         shell: pwsh
         run: |
@@ -147,11 +145,171 @@ jobs:
           Write-Host "Installer created in build\"
 
       # -----------------------------------------------------------------------
-      # Upload the installer as a workflow artifact for download and manual testing.
+      - name: Download 7-Zip extra (SFX module)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://7-zip.org/a/7z2409-extra.7z' -OutFile 7z-extra.7z
+          & 'C:\Program Files\7-Zip\7z.exe' x 7z-extra.7z 7zSD.sfx -o7z-extra -y
+          Remove-Item 7z-extra.7z
+
+      - name: Build Windows monolith (7-Zip SFX)
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.VERSION }}'
+
+          New-Item -ItemType Directory -Force -Path staging | Out-Null
+          Copy-Item build\EncryptionWizard.exe staging\
+          Copy-Item jre staging\jre -Recurse
+
+          Push-Location staging
+          & 'C:\Program Files\7-Zip\7z.exe' a -t7z -mx=9 -mmt=on ..\build\monolith.7z *
+          Pop-Location
+          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
+          Remove-Item -Recurse -Force staging
+
+          cmd /c "copy /b `"7z-extra\7zSD.sfx`" + `"config\7zip-sfx.cfg`" + `"build\monolith.7z`" `"build\EncryptionWizard-$version-Monolith.exe`""
+          if ($LASTEXITCODE -ne 0) { throw "SFX concatenation failed" }
+          Remove-Item build\monolith.7z
+
+          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-$version-Monolith.exe").Length / 1MB, 1)
+          Write-Host "Windows monolith: build\EncryptionWizard-$version-Monolith.exe ($sizeMB MB)"
+
+      # -----------------------------------------------------------------------
+      # Upload the installer and monolith as workflow artifacts.
       # No GitHub Release is created in the development workflow.
-      - name: Upload installer artifact
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EncryptionWizard-dev-installer
-          path: build/EncryptionWizard-*-Setup.exe
+          name: windows-artifacts
+          path: |
+            build/EncryptionWizard-*-Setup.exe
+            build/EncryptionWizard-*-Monolith.exe
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Job 2: Linux – makeself self-extracting monolith + OCI container image
+  # ---------------------------------------------------------------------------
+  build-linux:
+    name: Build Linux monolith and container image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Determine build version
+        id: version
+        run: |
+          SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
+          echo "VERSION=0.0.0-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Build version: 0.0.0-dev.${SHORT_SHA}"
+
+      # -----------------------------------------------------------------------
+      - name: Cache JDK (Temurin 21)
+        id: cache-jdk
+        uses: actions/cache@v4
+        with:
+          path: jdk
+          key: temurin-jdk-21-linux-x64
+
+      - name: Download JDK (Eclipse Temurin 21)
+        if: steps.cache-jdk.outputs.cache-hit != 'true'
+        run: |
+          curl -fL 'https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse' \
+            -o jdk.tar.gz
+          mkdir jdk-temp
+          tar -xzf jdk.tar.gz -C jdk-temp
+          mv "jdk-temp/$(ls jdk-temp)" jdk
+          rmdir jdk-temp
+          rm jdk.tar.gz
+
+      # -----------------------------------------------------------------------
+      - name: Build minimal JRE with jlink
+        run: |
+          MODULES=$(./jdk/bin/jdeps \
+            --multi-release 21 \
+            --ignore-missing-deps \
+            --print-module-deps \
+            files/EW-Unified-4.0.005-FIPS.jar)
+          echo "Modules required by JAR: $MODULES"
+
+          ./jdk/bin/jlink \
+            --module-path ./jdk/jmods \
+            --add-modules "$MODULES" \
+            --strip-debug \
+            --no-man-pages \
+            --no-header-files \
+            --compress zip-6 \
+            --output jre
+
+          echo "Minimal JRE created: $(du -sh jre | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Install makeself
+        run: sudo apt-get install -y makeself
+
+      - name: Build Linux monolith (makeself)
+        run: |
+          VERSION='${{ steps.version.outputs.VERSION }}'
+          mkdir -p build payload
+
+          cp files/EW-Unified-4.0.005-FIPS.jar payload/
+          cp -r jre/ payload/jre/
+
+          # Launcher script embedded inside the makeself archive
+          cat > payload/run.sh << 'LAUNCHER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          exec "$DIR/jre/bin/java" -jar "$DIR/EW-Unified-4.0.005-FIPS.jar" "$@"
+          LAUNCHER
+          chmod +x payload/run.sh
+
+          makeself \
+            --nox11 \
+            --sha256 \
+            payload/ \
+            "build/EncryptionWizard-${VERSION}-Linux.run" \
+            "Encryption Wizard ${VERSION}" \
+            ./run.sh
+
+          rm -rf payload
+          echo "Linux monolith: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+
+      # -----------------------------------------------------------------------
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push container image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/encryption-wizard:${{ steps.version.outputs.IMAGE_TAG }}
+          labels: |
+            org.opencontainers.image.title=Encryption Wizard
+            org.opencontainers.image.description=FIPS-compliant encryption application
+            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      # -----------------------------------------------------------------------
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-artifacts
+          path: build/EncryptionWizard-*-Linux.run
           retention-days: 14
