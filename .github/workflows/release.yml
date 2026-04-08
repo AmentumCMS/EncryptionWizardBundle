@@ -2,8 +2,8 @@ name: Build and Release
 
 # Runs on version tags pushed to the main branch (e.g. v1.0.0).
 # Produces:
-#   - Windows: Inno Setup installer + 7-Zip SFX self-contained monolith EXE
-#   - Linux:   makeself self-extracting monolith + OCI container image
+#   - Windows: Inno Setup installer
+#   - Linux:   makeself self-contained installer + OCI container image
 # All artifacts are attached to the GitHub Release.
 
 on:
@@ -13,10 +13,10 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Job 1: Windows – Inno Setup installer + 7-Zip SFX monolith EXE
+  # Job 1: Windows – Inno Setup installer
   # ---------------------------------------------------------------------------
   build-windows:
-    name: Build Windows installer and monolith
+    name: Build Windows installer
     runs-on: windows-latest
     permissions:
       contents: read
@@ -146,57 +146,18 @@ jobs:
           Write-Host "Installer created: build\EncryptionWizard-$version-Setup.exe"
 
       # -----------------------------------------------------------------------
-      # Bundle the Launch4j EXE + jlink JRE into a single self-extracting EXE
-      # via the 7-Zip SFX module (7zSD.sfx from the 7-Zip extra package).
-      # When the monolith is run, it silently extracts to %TEMP%\EncryptionWizard
-      # and launches EncryptionWizard.exe – no installation required.
-      - name: Download 7-Zip extra (SFX module)
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri 'https://7-zip.org/a/7z2409-extra.7z' -OutFile 7z-extra.7z
-          & 'C:\Program Files\7-Zip\7z.exe' x 7z-extra.7z 7zSD.sfx -o7z-extra -y
-          Remove-Item 7z-extra.7z
-
-      - name: Build Windows monolith (7-Zip SFX)
-        shell: pwsh
-        run: |
-          $version = '${{ steps.version.outputs.VERSION }}'
-
-          # Stage EXE + JRE together so the archive contains flat relative paths
-          New-Item -ItemType Directory -Force -Path staging | Out-Null
-          Copy-Item build\EncryptionWizard.exe staging\
-          Copy-Item jre staging\jre -Recurse
-
-          # Create the 7z archive from the staging directory
-          Push-Location staging
-          & 'C:\Program Files\7-Zip\7z.exe' a -t7z -mx=9 -mmt=on ..\build\monolith.7z *
-          Pop-Location
-          if ($LASTEXITCODE -ne 0) { throw "7z archive creation failed" }
-          Remove-Item -Recurse -Force staging
-
-          # Concatenate: SFX module + config header + archive → single EXE
-          cmd /c "copy /b `"7z-extra\7zSD.sfx`" + `"config\7zip-sfx.cfg`" + `"build\monolith.7z`" `"build\EncryptionWizard-$version-Monolith.exe`""
-          if ($LASTEXITCODE -ne 0) { throw "SFX concatenation failed" }
-          Remove-Item build\monolith.7z
-
-          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-$version-Monolith.exe").Length / 1MB, 1)
-          Write-Host "Windows monolith: build\EncryptionWizard-$version-Monolith.exe ($sizeMB MB)"
-
-      # -----------------------------------------------------------------------
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifacts
-          path: |
-            build/EncryptionWizard-*-Setup.exe
-            build/EncryptionWizard-*-Monolith.exe
+          path: build/EncryptionWizard-*-Setup.exe
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Job 2: Linux – makeself self-extracting monolith + OCI container image
+  # Job 2: Linux – makeself installer + OCI container image
   # ---------------------------------------------------------------------------
   build-linux:
-    name: Build Linux monolith and container image
+    name: Build Linux installer and container image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -257,12 +218,12 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Package the JAR + jlink JRE + launcher script into a single
-      # self-extracting shell archive using makeself.  The result runs on any
+      # self-contained shell archive using makeself.  The result runs on any
       # glibc-based Linux without pre-installed Java.
       - name: Install makeself
         run: sudo apt-get install -y makeself
 
-      - name: Build Linux monolith (makeself)
+      - name: Build Linux installer (makeself)
         run: |
           VERSION='${{ steps.version.outputs.VERSION }}'
           mkdir -p build payload
@@ -287,7 +248,7 @@ jobs:
             ./run.sh
 
           rm -rf payload
-          echo "Linux monolith: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+          echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
 
       # -----------------------------------------------------------------------
       # Build and push the OCI container image to GitHub Container Registry.
