@@ -148,6 +148,10 @@ jobs:
           Copy-Item $iconPath "build/icon.ico"
           Write-Host "Extracted icon.ico"
 
+          # Copy the splash image as PNG for distribution
+          Copy-Item $splashPath "build/splash.png"
+          Write-Host "Extracted splash.png"
+
           # Convert splash PNG to BMP for Inno Setup (WizardImageFile requires BMP)
           # Using PowerShell with .NET System.Drawing to convert
           Add-Type -AssemblyName System.Drawing
@@ -253,6 +257,10 @@ jobs:
           Copy-Item "files\Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$archiveDir\"
           Copy-Item "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"         "$archiveDir\"
           Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
+
+          # Application graphics (icon and splash image)
+          Copy-Item "build\icon.ico"   "$archiveDir\"
+          Copy-Item "build\splash.png" "$archiveDir\"
 
           Compress-Archive -Path "$archiveDir\*" `
             -DestinationPath "build\EncryptionWizard-${combinedVersion}-Windows.zip" `

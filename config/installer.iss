@@ -103,6 +103,10 @@ Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}";
 ; Homepage shortcut
 Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
+; Application graphics (icon and splash image extracted from JAR)
+Source: "..\build\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\splash.png"; DestDir: "{app}"; Flags: ignoreversion
+
 [Icons]
 Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"

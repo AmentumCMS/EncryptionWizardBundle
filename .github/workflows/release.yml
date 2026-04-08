@@ -150,6 +150,10 @@ jobs:
           Copy-Item $iconPath "build/icon.ico"
           Write-Host "Extracted icon.ico"
 
+          # Copy the splash image as PNG for distribution
+          Copy-Item $splashPath "build/splash.png"
+          Write-Host "Extracted splash.png"
+
           # Convert splash PNG to BMP for Inno Setup (WizardImageFile requires BMP)
           # Using PowerShell with .NET System.Drawing to convert
           Add-Type -AssemblyName System.Drawing
@@ -255,6 +259,10 @@ jobs:
           Copy-Item "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"         "$archiveDir\"
           Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
 
+          # Application graphics (icon and splash image)
+          Copy-Item "build\icon.ico"   "$archiveDir\"
+          Copy-Item "build\splash.png" "$archiveDir\"
+
           Compress-Archive -Path "$archiveDir\*" `
             -DestinationPath "build\EncryptionWizard-${combinedVersion}-Windows.zip" `
             -CompressionLevel Optimal
@@ -357,6 +365,28 @@ jobs:
           echo "Minimal JRE created: $(du -sh jre | cut -f1)"
 
       # -----------------------------------------------------------------------
+      - name: Extract graphics from JAR
+        run: |
+          # Extract icon and splash image from JAR for distribution
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          mkdir -p jar-extract build
+          unzip -q "$JAR_FILE" -d jar-extract
+
+          # Verify required files exist
+          ICON_PATH="jar-extract/res/images/icon"
+          SPLASH_PATH="jar-extract/res/images/splash"
+          if [ ! -f "$ICON_PATH" ]; then echo "Error: Icon file not found: $ICON_PATH" >&2; exit 1; fi
+          if [ ! -f "$SPLASH_PATH" ]; then echo "Error: Splash image not found: $SPLASH_PATH" >&2; exit 1; fi
+
+          # Copy graphics to build directory with proper extensions
+          cp "$ICON_PATH" "build/icon.ico"
+          cp "$SPLASH_PATH" "build/splash.png"
+          echo "Extracted icon.ico and splash.png"
+
+          # Cleanup
+          rm -rf jar-extract
+
+      # -----------------------------------------------------------------------
       # Package the JAR + jlink JRE + launcher script into a single
       # self-contained shell archive using makeself.  The result runs on any
       # glibc-based Linux without pre-installed Java.
@@ -372,6 +402,10 @@ jobs:
 
           cp files/EW-Unified-4.0.005-FIPS.jar payload/
           cp -r jre/ payload/jre/
+
+          # Application graphics
+          cp build/icon.ico payload/
+          cp build/splash.png payload/
 
           # Launcher script embedded inside the makeself archive
           cat > payload/run.sh << 'LAUNCHER'
@@ -412,6 +446,10 @@ jobs:
           cp "files/Encryption Wizard User Guide v405.pdf"              "$ARCHIVE_DIR/"
           cp "files/Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$ARCHIVE_DIR/"
           cp "files/Encryption Wizard homepage.url"                     "$ARCHIVE_DIR/"
+
+          # Application graphics
+          cp "build/icon.ico"   "$ARCHIVE_DIR/"
+          cp "build/splash.png" "$ARCHIVE_DIR/"
 
           # Launcher script
           cat > "$ARCHIVE_DIR/run.sh" << 'LAUNCHER'
