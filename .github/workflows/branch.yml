@@ -1,14 +1,15 @@
-name: Development Build
+name: Branch Build
 
-# Runs on every push to the development branch and on manual dispatch.
-# Performs all the same build steps as the release workflow but DOES NOT
-# create a GitHub Release – artifacts are uploaded to the workflow run
-# instead so they can be downloaded and tested directly.
-# The container image is pushed to ghcr.io with a dev-<sha> tag.
+# Runs on every push to any feature branch (anything that is not main or
+# development) and on manual dispatch.  Builds both platform installers and
+# uploads them as workflow artifacts so contributors can download and test
+# the build directly from the workflow run.  No GitHub Release is created
+# and no container image is pushed to a registry.
 
 on:
   push:
-    branches:
+    branches-ignore:
+      - main
       - development
   workflow_dispatch:
 
@@ -35,7 +36,8 @@ jobs:
         shell: pwsh
         run: |
           $shortSha = '${{ github.sha }}'.Substring(0, 7)
-          $version  = "0.0.0-dev.$shortSha"
+          $branch   = '${{ github.ref_name }}' -replace '[^a-zA-Z0-9._-]', '-'
+          $version  = "0.0.0-branch.$branch.$shortSha"
           echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           Write-Host "Build version: $version"
 
@@ -117,12 +119,12 @@ jobs:
         shell: pwsh
         run: |
           $version = '${{ steps.version.outputs.VERSION }}'
-          # Use a safe four-part version for the Windows EXE manifest (dev builds use 0.0.0.0)
+          # Use a safe four-part version for the Windows EXE manifest (branch builds use 0.0.0.0)
           $v4      = '0.0.0.0'
           $content = Get-Content -Path config/launch4j.xml -Raw
-          $content = $content -replace '<fileVersion>[^<]+</fileVersion>',           "<fileVersion>$v4</fileVersion>"
-          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',      "<txtFileVersion>$version</txtFileVersion>"
-          $content = $content -replace '<productVersion>[^<]+</productVersion>',      "<productVersion>$v4</productVersion>"
+          $content = $content -replace '<fileVersion>[^<]+</fileVersion>',            "<fileVersion>$v4</fileVersion>"
+          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',       "<txtFileVersion>$version</txtFileVersion>"
+          $content = $content -replace '<productVersion>[^<]+</productVersion>',       "<productVersion>$v4</productVersion>"
           $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
           Set-Content -Path config/launch4j.xml -Value $content
           Write-Host "Version info set to $version"
@@ -147,8 +149,6 @@ jobs:
           Write-Host "Installer created in build\"
 
       # -----------------------------------------------------------------------
-      # Upload the installer as a workflow artifact.
-      # No GitHub Release is created in the development workflow.
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -157,14 +157,13 @@ jobs:
           retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # Job 2: Linux – makeself installer + OCI container image
+  # Job 2: Linux – makeself installer
   # ---------------------------------------------------------------------------
   build-linux:
-    name: Build Linux installer and container image
+    name: Build Linux installer
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       # -----------------------------------------------------------------------
@@ -178,9 +177,9 @@ jobs:
         id: version
         run: |
           SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
-          echo "VERSION=0.0.0-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "IMAGE_TAG=dev-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Build version: 0.0.0-dev.${SHORT_SHA}"
+          BRANCH=$(echo '${{ github.ref_name }}' | tr -c 'a-zA-Z0-9._-' '-')
+          echo "VERSION=0.0.0-branch.${BRANCH}.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Build version: 0.0.0-branch.${BRANCH}.${SHORT_SHA}"
 
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
@@ -254,32 +253,7 @@ jobs:
           echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
 
       # -----------------------------------------------------------------------
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push container image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/encryption-wizard:${{ steps.version.outputs.IMAGE_TAG }}
-          labels: |
-            org.opencontainers.image.title=Encryption Wizard
-            org.opencontainers.image.description=FIPS-compliant encryption application
-            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      # -----------------------------------------------------------------------
-      - name: Upload Linux artifact
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
