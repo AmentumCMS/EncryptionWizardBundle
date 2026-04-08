@@ -23,8 +23,14 @@ if (-not (Test-Path $javaExe)) {
     Write-Host ""
     Write-Host "Please ensure the jre directory is in the same location as this script."
     Write-Host ""
-    Write-Host "Press any key to continue..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    if ($Host.UI.RawUI) {
+        Write-Host "Press any key to continue..."
+        try {
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        } catch {
+            Start-Sleep -Seconds 3
+        }
+    }
     exit 1
 }
 
@@ -35,8 +41,14 @@ if (-not (Test-Path $jarFile)) {
     Write-Host ""
     Write-Host "Please ensure EW-Unified-4.0.005-FIPS.jar is in the same location as this script."
     Write-Host ""
-    Write-Host "Press any key to continue..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    if ($Host.UI.RawUI) {
+        Write-Host "Press any key to continue..."
+        try {
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        } catch {
+            Start-Sleep -Seconds 3
+        }
+    }
     exit 1
 }
 
@@ -53,8 +65,14 @@ if ($process.ExitCode -ne 0) {
     Write-Host ""
     Write-Host "Encryption Wizard exited with code: $($process.ExitCode)" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "Press any key to continue..."
-    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    if ($Host.UI.RawUI) {
+        Write-Host "Press any key to continue..."
+        try {
+            $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        } catch {
+            Start-Sleep -Seconds 3
+        }
+    }
     exit $process.ExitCode
 }
 

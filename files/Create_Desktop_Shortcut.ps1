@@ -65,5 +65,11 @@ Write-Host ""
 Write-Host "Desktop shortcut created successfully!" -ForegroundColor Green
 Write-Host "Shortcut location: $shortcutPath"
 Write-Host ""
-Write-Host "Press any key to continue..."
-$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+if ($Host.UI.RawUI) {
+    Write-Host "Press any key to continue..."
+    try {
+        $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    } catch {
+        Start-Sleep -Seconds 2
+    }
+}

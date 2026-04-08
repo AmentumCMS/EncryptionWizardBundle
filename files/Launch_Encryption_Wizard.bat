@@ -48,12 +48,16 @@ REM Launch the application with the bundled JRE
 REM Pass all command line arguments to the application
 "%JAVA_EXE%" -jar "%JAR_FILE%" %*
 
-REM Pause only if there was an error
-if errorlevel 1 (
+REM Capture the exit code
+set EXITCODE=%ERRORLEVEL%
+
+REM Pause only if there was an error (non-zero exit code)
+if %EXITCODE% neq 0 (
     echo.
-    echo Encryption Wizard exited with an error.
+    echo Encryption Wizard exited with code: %EXITCODE%
     echo.
     pause
 )
 
 endlocal
+exit /b %EXITCODE%
