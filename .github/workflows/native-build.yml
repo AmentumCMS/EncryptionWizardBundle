@@ -41,6 +41,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -105,6 +107,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -162,6 +166,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -219,6 +225,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
