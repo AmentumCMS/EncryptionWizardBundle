@@ -100,6 +100,11 @@ Source: "..\files\Getting_Started_with_Encryption_Wizard_4.0.005.txt"; DestDir: 
 ; Fallback JAR launcher (for users who already have a JRE in PATH)
 Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}"; Flags: ignoreversion
 
+; Direct launchers using bundled JRE
+Source: "..\files\Launch_Encryption_Wizard.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Launch_Encryption_Wizard.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Launch_Encryption_Wizard.vbs"; DestDir: "{app}"; Flags: ignoreversion
+
 ; Homepage shortcut
 Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
