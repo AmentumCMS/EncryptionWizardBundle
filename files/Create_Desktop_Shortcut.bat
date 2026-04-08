@@ -29,14 +29,14 @@ powershell -ExecutionPolicy Bypass -NoProfile -Command ^
     $shortcut = $shell.CreateShortcut($shortcutPath); ^
     if (Test-Path $exeFile) { ^
         $shortcut.TargetPath = $exeFile; ^
-        $shortcut.IconLocation = \"$exeFile,0\"; ^
+        $shortcut.IconLocation = \\\"$exeFile,0\\\"; ^
         $shortcut.Description = 'Encryption Wizard - FIPS-compliant encryption application'; ^
         Write-Host 'Using EncryptionWizard.exe launcher' -ForegroundColor Green; ^
     } elseif ((Test-Path $javaExe) -and (Test-Path $jarFile)) { ^
         $shortcut.TargetPath = $javaExe; ^
-        $shortcut.Arguments = \"-jar `\"$jarFile`\"\"; ^
+        $shortcut.Arguments = \\\"-jar \\\`\\\"$jarFile\\\`\\\"\\\"; ^
         $shortcut.Description = 'Encryption Wizard - FIPS-compliant encryption application'; ^
-        $shortcut.IconLocation = \"$jarFile,0\"; ^
+        $shortcut.IconLocation = \\\"$jarFile,0\\\"; ^
         Write-Host 'Using bundled JRE to launch JAR' -ForegroundColor Green; ^
     } else { ^
         Write-Host 'ERROR: Required files not found!' -ForegroundColor Red; ^
@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -NoProfile -Command ^
     $shortcut.Save(); ^
     Write-Host ''; ^
     Write-Host 'Desktop shortcut created successfully!' -ForegroundColor Green; ^
-    Write-Host \"Shortcut location: $shortcutPath\""
+    Write-Host \\\"Shortcut location: $shortcutPath\\\""
 
 if %ERRORLEVEL% EQU 0 (
     echo.
