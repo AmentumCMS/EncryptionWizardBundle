@@ -122,6 +122,8 @@ jobs:
 
       - name: Create GitHub Pre-release
         uses: softprops/action-gh-release@v2
+        env:
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
         with:
           tag_name: ${{ inputs.prerelease_tag }}
           name: Encryption Wizard ${{ needs.compute-version.outputs.combined_version }} (Pre-release)
