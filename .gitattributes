@@ -14,7 +14,7 @@
 *.yml text eol=lf
 *.txt text eol=lf
 
-# Force .git* to always use LF line endings for consitency
+# Force .git* to always use LF line endings for consistency
 .gitignore text eol=lf
 .gitattributes text eol=lf
 .gitmodules text eol=lf

@@ -48,24 +48,57 @@ jobs:
           Remove-Item launch4j.zip
 
       # -----------------------------------------------------------------------
-      - name: Cache JRE (Temurin 21)
-        id: cache-jre
+      # We need a full JDK (not just a JRE) so that jdeps and jlink are available.
+      # The JDK is used only at build time; the installer ships the stripped-down
+      # custom JRE produced by jlink, not the full JDK.
+      - name: Cache JDK (Temurin 21)
+        id: cache-jdk
         uses: actions/cache@v4
         with:
-          path: jre
-          key: temurin-jre-21-windows-x64
+          path: jdk
+          key: temurin-jdk-21-windows-x64
 
-      - name: Download JRE (Eclipse Temurin 21)
-        if: steps.cache-jre.outputs.cache-hit != 'true'
+      - name: Download JDK (Eclipse Temurin 21)
+        if: steps.cache-jdk.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
-          $jreUrl = 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse'
-          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
-          Expand-Archive -Path jre.zip -DestinationPath jre-temp
-          $jreDir = Get-ChildItem -Path jre-temp -Directory | Select-Object -First 1
-          Move-Item -Path $jreDir.FullName -Destination jre
-          Remove-Item -Recurse -Force jre-temp
-          Remove-Item jre.zip
+          $jdkUrl = 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jdk/hotspot/normal/eclipse'
+          Invoke-WebRequest -Uri $jdkUrl -OutFile jdk.zip
+          Expand-Archive -Path jdk.zip -DestinationPath jdk-temp
+          $jdkDir = Get-ChildItem -Path jdk-temp -Directory | Select-Object -First 1
+          Move-Item -Path $jdkDir.FullName -Destination jdk
+          Remove-Item -Recurse -Force jdk-temp
+          Remove-Item jdk.zip
+
+      # -----------------------------------------------------------------------
+      # Determine the exact set of modules the JAR requires (via jdeps) and use
+      # jlink to produce a minimal custom JRE containing only those modules.
+      # This is significantly smaller than a full JRE (~30-40 MB vs ~180 MB).
+      - name: Build minimal JRE with jlink
+        shell: pwsh
+        run: |
+          $jdepsExe = '.\jdk\bin\jdeps.exe'
+          $jlinkExe = '.\jdk\bin\jlink.exe'
+
+          # Discover required modules dynamically from the JAR
+          $modules = & $jdepsExe --multi-release 21 --ignore-missing-deps `
+            --print-module-deps files/EW-Unified-4.0.005-FIPS.jar
+          if ($LASTEXITCODE -ne 0) { throw "jdeps failed with exit code $LASTEXITCODE" }
+          Write-Host "Modules required by JAR: $modules"
+
+          # Build a minimal JRE into the jre/ directory
+          & $jlinkExe `
+            --module-path ".\jdk\jmods" `
+            --add-modules $modules `
+            --strip-debug `
+            --no-man-pages `
+            --no-header-files `
+            --compress zip-6 `
+            --output jre
+          if ($LASTEXITCODE -ne 0) { throw "jlink failed with exit code $LASTEXITCODE" }
+
+          $sizeMB = [math]::Round((Get-ChildItem -Recurse jre | Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+          Write-Host "Minimal JRE created in jre\ ($sizeMB MB)"
 
       # -----------------------------------------------------------------------
       - name: Install Inno Setup
