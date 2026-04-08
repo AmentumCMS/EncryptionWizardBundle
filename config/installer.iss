@@ -7,6 +7,8 @@
 ; The following items are expected in the working directory when this script
 ; is compiled:
 ;   build\EncryptionWizard.exe                           - EXE produced by Launch4j
+;   build\icon.ico                                       - Application icon (extracted from JAR)
+;   build\splash.bmp                                     - Installer splash image (extracted from JAR)
 ;   jre\                                                 - Bundled JRE (downloaded by CI)
 ;   files\Encryption Wizard User Guide v405.docx         - User documentation
 ;   files\Encryption Wizard User Guide v405.pdf          - User documentation (PDF)
@@ -67,6 +69,9 @@ MinVersion=10.0
 
 ; Installer appearance
 WizardStyle=modern
+SetupIconFile=..\build\icon.ico
+WizardImageFile=..\build\splash.bmp
+WizardSmallImageFile=..\build\icon-55x58.bmp
 
 ; Notify Windows Shell to refresh file-type icon/association cache
 ChangesAssociations=yes
@@ -75,8 +80,11 @@ ChangesAssociations=yes
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-; Main application EXE (JAR is embedded inside by Launch4j)
+; Main application EXE (launcher for the JAR)
 Source: "..\build\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+
+; Application JAR file (must be alongside the EXE)
+Source: "..\files\EW-Unified-*.jar"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Bundled JRE – required at runtime by the EXE launcher
 Source: "..\jre\*"; DestDir: "{app}\jre"; \
@@ -95,15 +103,26 @@ Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}";
 ; Homepage shortcut
 Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
+; Application graphics (icon and splash image extracted from JAR)
+Source: "..\build\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\splash.png"; DestDir: "{app}"; Flags: ignoreversion
+
 [Icons]
-Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"
+Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
-Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; \
+Name: "{commondesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; \
   Tasks: desktopicon
+; Send To shortcut - allows right-click "Send to" > "Encryption Wizard"
+Name: "{usersendto}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; \
+  Tasks: sendtoshortcut
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
   GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "sendtoshortcut"; Description: "Add to Send To menu (right-click > Send to > Encryption Wizard)"; \
+  GroupDescription: "Shell Integration:"; Flags: unchecked
+Name: "contextmenu"; Description: "Add right-click context menu options (Encrypt File / Encrypt Directory)"; \
+  GroupDescription: "Shell Integration:"; Flags: unchecked
 
 [Run]
 Filename: "{app}\{#AppExeName}"; \
@@ -157,3 +176,40 @@ Root: HKA; Subkey: "Software\Classes\EncryptionWizard.KeyFile\DefaultIcon"; \
   ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
 Root: HKA; Subkey: "Software\Classes\EncryptionWizard.KeyFile\shell\open\command"; \
   ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+
+; -----------------------------------------------------------------------
+; Right-click context menu: "Encrypt File" for all files
+; -----------------------------------------------------------------------
+Root: HKA; Subkey: "Software\Classes\*\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: ""; ValueData: "Encrypt File"; \
+  Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\*\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#AppExeName},0"; \
+  Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\*\shell\EncryptWithEW\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; \
+  Tasks: contextmenu
+
+; -----------------------------------------------------------------------
+; Right-click context menu: "Encrypt Directory" for folders
+; -----------------------------------------------------------------------
+Root: HKA; Subkey: "Software\Classes\Directory\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: ""; ValueData: "Encrypt Directory"; \
+  Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#AppExeName},0"; \
+  Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\shell\EncryptWithEW\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""; \
+  Tasks: contextmenu
+
+; Right-click context menu: "Encrypt Directory" for folder backgrounds
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: ""; ValueData: "Encrypt Directory"; \
+  Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\EncryptWithEW"; \
+  ValueType: string; ValueName: "Icon"; ValueData: "{app}\{#AppExeName},0"; \
+  Tasks: contextmenu
+Root: HKA; Subkey: "Software\Classes\Directory\Background\shell\EncryptWithEW\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%V"""; \
+  Tasks: contextmenu
