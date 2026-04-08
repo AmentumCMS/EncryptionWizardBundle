@@ -4,6 +4,10 @@ name: Build Native Executables (GraalVM)
 # Called by both dev.yml (for pre-release builds) and release.yml (for release builds).
 
 on:
+  pull_request:
+    branches:
+      - main
+      - development
   workflow_dispatch:
     inputs:
       ew_version:
@@ -75,14 +79,11 @@ jobs:
           echo "EW Version: $EW_VERSION, Bundle Version: $BUNDLE_VERSION"
           native-image \
             -jar files/EW-Unified-4.0.005-FIPS.jar \
-            -o build/encryption-wizard \
             -H:Name=encryption-wizard \
+            -H:Path=build \
             -H:ConfigurationFileDirectories=config/graalvm \
             --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
+            --enable-url-protocols=https \
             --verbose \
             2>&1 | tee native-image-build.log || {
               echo "Native image build failed, checking for fallback..."
@@ -103,68 +104,6 @@ jobs:
         with:
           name: linux-native-artifacts
           path: build/EncryptionWizard-*-linux-x64-native.tar.gz
-          retention-days: ${{ inputs.is_release && 1 || 14 }}
-
-  # ---------------------------------------------------------------------------
-  # Build native executable for macOS x64
-  # ---------------------------------------------------------------------------
-  build-macos-x64-native:
-    name: Build macOS x64 native executable
-    runs-on: macos-13
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          lfs: true
-
-      - name: Set up GraalVM
-        uses: graalvm/setup-graalvm@v1
-        with:
-          java-version: '21'
-          distribution: 'graalvm'
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify GraalVM installation
-        run: |
-          echo "JAVA_HOME: $JAVA_HOME"
-          java -version
-          native-image --version
-
-      - name: Build native executable
-        run: |
-          EW_VERSION='${{ inputs.ew_version }}'
-          BUNDLE_VERSION='${{ inputs.bundle_version }}'
-          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
-          mkdir -p build
-
-          echo "Building native executable for macOS x64..."
-          echo "EW Version: $EW_VERSION, Bundle Version: $BUNDLE_VERSION"
-          native-image \
-            -jar files/EW-Unified-4.0.005-FIPS.jar \
-            -o build/encryption-wizard \
-            -H:Name=encryption-wizard \
-            -H:ConfigurationFileDirectories=config/graalvm \
-            --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
-            --verbose
-
-          # Create distributable archive
-          cd build
-          chmod +x encryption-wizard
-          tar -czvf "EncryptionWizard-${COMBINED_VERSION}-macos-x64-native.tar.gz" encryption-wizard
-          rm encryption-wizard
-
-      - name: Upload macOS x64 native artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: macos-x64-native-artifacts
-          path: build/EncryptionWizard-*-macos-x64-native.tar.gz
           retention-days: ${{ inputs.is_release && 1 || 14 }}
 
   # ---------------------------------------------------------------------------
@@ -206,14 +145,11 @@ jobs:
           echo "EW Version: $EW_VERSION, Bundle Version: $BUNDLE_VERSION"
           native-image \
             -jar files/EW-Unified-4.0.005-FIPS.jar \
-            -o build/encryption-wizard \
             -H:Name=encryption-wizard \
+            -H:Path=build \
             -H:ConfigurationFileDirectories=config/graalvm \
             --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
+            --enable-url-protocols=https \
             --verbose
 
           # Create distributable archive
@@ -273,14 +209,11 @@ jobs:
           Write-Host "EW Version: $ewVersion, Bundle Version: $bundleVersion"
           native-image `
             -jar files/EW-Unified-4.0.005-FIPS.jar `
-            -o build/encryption-wizard `
             -H:Name=encryption-wizard `
+            -H:Path=build `
             -H:ConfigurationFileDirectories=config/graalvm `
             --no-fallback `
-            --enable-url-protocols=http,https `
-            --initialize-at-build-time=org.slf4j `
-            --initialize-at-build-time=ch.qos.logback `
-            -H:+ReportExceptionStackTraces `
+            --enable-url-protocols=https `
             --verbose
 
           if (-not (Test-Path 'build\encryption-wizard.exe')) {
