@@ -68,6 +68,9 @@ MinVersion=10.0
 ; Installer appearance
 WizardStyle=modern
 
+; Notify Windows Shell to refresh file-type icon/association cache
+ChangesAssociations=yes
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -106,3 +109,51 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; \
 Filename: "{app}\{#AppExeName}"; \
   Description: "{cm:LaunchProgram,{#StringChange(AppName, '&', '&&')}}"; \
   Flags: nowait postinstall skipifsilent
+
+[Registry]
+; -----------------------------------------------------------------------
+; File type associations
+; Registered under HKA so they apply to HKCU for per-user installs and
+; HKLM for system-wide installs, matching the installation mode chosen.
+;
+; Open command for all three types passes the file path as the first
+; argument: EncryptionWizard.exe "<filepath>"
+; The application detects the file type by extension and presents the
+; appropriate Decrypt / Expand / Key-load UI automatically.
+; -----------------------------------------------------------------------
+
+; .wza – Encryption Wizard Archive
+Root: HKA; Subkey: "Software\Classes\.wza"; \
+  ValueType: string; ValueName: ""; ValueData: "EncryptionWizard.Archive"; \
+  Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Archive"; \
+  ValueType: string; ValueName: ""; ValueData: "Encryption Wizard Archive"; \
+  Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Archive\DefaultIcon"; \
+  ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Archive\shell\open\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+
+; .wzd – Encryption Wizard Encrypted File (single file)
+Root: HKA; Subkey: "Software\Classes\.wzd"; \
+  ValueType: string; ValueName: ""; ValueData: "EncryptionWizard.Document"; \
+  Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Document"; \
+  ValueType: string; ValueName: ""; ValueData: "Encryption Wizard Encrypted File"; \
+  Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Document\DefaultIcon"; \
+  ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.Document\shell\open\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
+
+; .wzk – Encryption Wizard Password File
+Root: HKA; Subkey: "Software\Classes\.wzk"; \
+  ValueType: string; ValueName: ""; ValueData: "EncryptionWizard.KeyFile"; \
+  Flags: uninsdeletevalue
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.KeyFile"; \
+  ValueType: string; ValueName: ""; ValueData: "Encryption Wizard Password File"; \
+  Flags: uninsdeletekey
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.KeyFile\DefaultIcon"; \
+  ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
+Root: HKA; Subkey: "Software\Classes\EncryptionWizard.KeyFile\shell\open\command"; \
+  ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
