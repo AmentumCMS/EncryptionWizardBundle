@@ -1,16 +1,17 @@
-name: Build and Release
+name: Branch Build
 
-# Runs on version tags pushed to the main branch (e.g. v1.0.0).
-# Produces:
-#   - Windows: Inno Setup installer
-#   - Linux:   makeself self-contained installer + OCI container image
-#   - Native:  GraalVM native executables for Linux, macOS (x64 & ARM64), Windows
-# All artifacts are attached to the GitHub Release.
+# Runs on every push to any feature branch (anything that is not main or
+# development) and on manual dispatch.  Builds both platform installers and
+# uploads them as workflow artifacts so contributors can download and test
+# the build directly from the workflow run.  No GitHub Release is created
+# and no container image is pushed to a registry.
 
 on:
   push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+    branches-ignore:
+      - main
+      - development
+  workflow_dispatch:
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -30,13 +31,15 @@ jobs:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine version from tag
+      - name: Determine build version
         id: version
         shell: pwsh
         run: |
-          $version = '${{ github.ref_name }}' -replace '^v', ''
+          $shortSha = '${{ github.sha }}'.Substring(0, 7)
+          $branch   = '${{ github.ref_name }}' -replace '[^a-zA-Z0-9._-]', '-'
+          $version  = "0.0.0-branch.$branch.$shortSha"
           echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Building version: $version"
+          Write-Host "Build version: $version"
 
       # -----------------------------------------------------------------------
       - name: Cache Launch4j
@@ -56,7 +59,6 @@ jobs:
           Remove-Item launch4j.zip
 
       # -----------------------------------------------------------------------
-      # Full JDK required for jdeps and jlink (not included in a plain JRE).
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
         uses: actions/cache@v4
@@ -77,9 +79,6 @@ jobs:
           Remove-Item jdk.zip
 
       # -----------------------------------------------------------------------
-      # Determine the exact set of modules the JAR requires (via jdeps) and use
-      # jlink to produce a minimal custom JRE containing only those modules.
-      # This is significantly smaller than a full JRE (~30-40 MB vs ~180 MB).
       - name: Build minimal JRE with jlink
         shell: pwsh
         run: |
@@ -119,13 +118,14 @@ jobs:
       - name: Update version info in Launch4j config
         shell: pwsh
         run: |
-          $version    = '${{ steps.version.outputs.VERSION }}'
-          $v4         = "$version.0"
-          $content    = Get-Content -Path config/launch4j.xml -Raw
-          $content    = $content -replace '<fileVersion>[^<]+</fileVersion>',       "<fileVersion>$v4</fileVersion>"
-          $content    = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',  "<txtFileVersion>$version</txtFileVersion>"
-          $content    = $content -replace '<productVersion>[^<]+</productVersion>',  "<productVersion>$v4</productVersion>"
-          $content    = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          $version = '${{ steps.version.outputs.VERSION }}'
+          # Use a safe four-part version for the Windows EXE manifest (branch builds use 0.0.0.0)
+          $v4      = '0.0.0.0'
+          $content = Get-Content -Path config/launch4j.xml -Raw
+          $content = $content -replace '<fileVersion>[^<]+</fileVersion>',            "<fileVersion>$v4</fileVersion>"
+          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',       "<txtFileVersion>$version</txtFileVersion>"
+          $content = $content -replace '<productVersion>[^<]+</productVersion>',       "<productVersion>$v4</productVersion>"
+          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
           Set-Content -Path config/launch4j.xml -Value $content
           Write-Host "Version info set to $version"
 
@@ -146,7 +146,7 @@ jobs:
           $version = '${{ steps.version.outputs.VERSION }}'
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$version config\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
-          Write-Host "Installer created: build\EncryptionWizard-$version-Setup.exe"
+          Write-Host "Installer created in build\"
 
       # -----------------------------------------------------------------------
       - name: Upload Windows artifacts
@@ -154,17 +154,16 @@ jobs:
         with:
           name: windows-artifacts
           path: build/EncryptionWizard-*-Setup.exe
-          retention-days: 1
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
-  # Job 2: Linux – makeself installer + OCI container image
+  # Job 2: Linux – makeself installer
   # ---------------------------------------------------------------------------
   build-linux:
-    name: Build Linux installer and container image
+    name: Build Linux installer
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
 
     steps:
       # -----------------------------------------------------------------------
@@ -174,12 +173,13 @@ jobs:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine version from tag
+      - name: Determine build version
         id: version
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
+          SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
+          BRANCH=$(echo '${{ github.ref_name }}' | tr -c 'a-zA-Z0-9._-' '-')
+          echo "VERSION=0.0.0-branch.${BRANCH}.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Build version: 0.0.0-branch.${BRANCH}.${SHORT_SHA}"
 
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
@@ -222,9 +222,6 @@ jobs:
           echo "Minimal JRE created: $(du -sh jre | cut -f1)"
 
       # -----------------------------------------------------------------------
-      # Package the JAR + jlink JRE + launcher script into a single
-      # self-contained shell archive using makeself.  The result runs on any
-      # glibc-based Linux without pre-installed Java.
       - name: Install makeself
         run: sudo apt-get install -y makeself
 
@@ -256,136 +253,9 @@ jobs:
           echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
 
       # -----------------------------------------------------------------------
-      # Build and push the OCI container image to GitHub Container Registry.
-      # The jlink JRE created above is used as the container runtime.
-      # CMD defaults to -h so the container prints help when run with no args.
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push container image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/encryption-wizard:${{ steps.version.outputs.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/encryption-wizard:latest
-          labels: |
-            org.opencontainers.image.title=Encryption Wizard
-            org.opencontainers.image.description=FIPS-compliant encryption application
-            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      # -----------------------------------------------------------------------
-      - name: Upload Linux artifact
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
           path: build/EncryptionWizard-*-Linux.run
-          retention-days: 1
-
-  # ---------------------------------------------------------------------------
-  # Job 3: Compute version for native builds
-  # ---------------------------------------------------------------------------
-  compute-version:
-    name: Compute release version
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    outputs:
-      version: ${{ steps.version.outputs.VERSION }}
-    steps:
-      - name: Determine version from tag
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
-  # ---------------------------------------------------------------------------
-  # Job 4: GraalVM Native Executables (Linux, macOS, Windows)
-  # ---------------------------------------------------------------------------
-  build-native:
-    name: Build native executables
-    needs: [compute-version]
-    permissions:
-      contents: read
-    uses: ./.github/workflows/native-build.yml
-    with:
-      version: ${{ needs.compute-version.outputs.version }}
-      is_release: true
-    secrets: inherit
-
-  # ---------------------------------------------------------------------------
-  # Job 5: Publish GitHub Release with all platform artifacts
-  # ---------------------------------------------------------------------------
-  publish-release:
-    name: Publish GitHub Release
-    needs: [build-windows, build-linux, build-native]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      # -----------------------------------------------------------------------
-      - name: Determine version from tag
-        id: version
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-
-      # -----------------------------------------------------------------------
-      - name: Download Windows artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-artifacts
-          path: release-artifacts
-
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-artifacts
-          path: release-artifacts
-
-      - name: Download Linux native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: linux-native-artifacts
-          path: release-artifacts
-
-      - name: Download macOS x64 native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-x64-native-artifacts
-          path: release-artifacts
-
-      - name: Download macOS ARM64 native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: macos-arm64-native-artifacts
-          path: release-artifacts
-
-      - name: Download Windows native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-native-artifacts
-          path: release-artifacts
-
-      # -----------------------------------------------------------------------
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Encryption Wizard v${{ steps.version.outputs.VERSION }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-          files: release-artifacts/*
+          retention-days: 14
