@@ -197,6 +197,24 @@ jobs:
       - name: Set up Visual Studio environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Extract icon from JAR
+        shell: pwsh
+        run: |
+          # Extract icon from JAR for native image
+          $jarFile = Get-ChildItem -Path "files" -Filter "EW-*.jar" | Select-Object -First 1
+          Expand-Archive -Path $jarFile.FullName -DestinationPath jar-extract -Force
+
+          # Verify icon exists and copy it
+          $iconPath = "jar-extract/res/images/icon"
+          if (-not (Test-Path $iconPath)) { throw "Icon file not found in JAR: $iconPath" }
+
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Copy-Item $iconPath "build/icon.ico"
+          Write-Host "Extracted icon.ico for native image"
+
+          # Cleanup extracted JAR contents (keep only the icon)
+          Remove-Item -Recurse -Force jar-extract
+
       - name: Build native executable
         shell: pwsh
         run: |
@@ -212,6 +230,7 @@ jobs:
             -H:Name=encryption-wizard `
             -H:Path=build `
             -H:ConfigurationFileDirectories=config/graalvm `
+            -H:NativeImageIcon=build/icon.ico `
             --no-fallback `
             --enable-url-protocols=https `
             --verbose
