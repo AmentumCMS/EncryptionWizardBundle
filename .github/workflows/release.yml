@@ -4,6 +4,7 @@ name: Build and Release
 # Produces:
 #   - Windows: Inno Setup installer
 #   - Linux:   makeself self-contained installer + OCI container image
+#   - Native:  GraalVM native executables for Linux, macOS (x64 & ARM64), Windows
 # All artifacts are attached to the GitHub Release.
 
 on:
@@ -289,11 +290,42 @@ jobs:
           retention-days: 1
 
   # ---------------------------------------------------------------------------
-  # Job 3: Publish GitHub Release with all platform artifacts
+  # Job 3: Compute version for native builds
+  # ---------------------------------------------------------------------------
+  compute-version:
+    name: Compute release version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Determine version from tag
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Job 4: GraalVM Native Executables (Linux, macOS, Windows)
+  # ---------------------------------------------------------------------------
+  build-native:
+    name: Build native executables
+    needs: [compute-version]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-build.yml
+    with:
+      version: ${{ needs.compute-version.outputs.version }}
+      is_release: true
+    secrets: inherit
+
+  # ---------------------------------------------------------------------------
+  # Job 5: Publish GitHub Release with all platform artifacts
   # ---------------------------------------------------------------------------
   publish-release:
     name: Publish GitHub Release
-    needs: [build-windows, build-linux]
+    needs: [build-windows, build-linux, build-native]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -317,6 +349,30 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: linux-artifacts
+          path: release-artifacts
+
+      - name: Download Linux native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-native-artifacts
+          path: release-artifacts
+
+      - name: Download macOS x64 native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-x64-native-artifacts
+          path: release-artifacts
+
+      - name: Download macOS ARM64 native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm64-native-artifacts
+          path: release-artifacts
+
+      - name: Download Windows native artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-native-artifacts
           path: release-artifacts
 
       # -----------------------------------------------------------------------

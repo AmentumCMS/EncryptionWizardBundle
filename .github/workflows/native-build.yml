@@ -1,0 +1,272 @@
+name: Build Native Executables (GraalVM)
+
+# Reusable workflow for building GraalVM native executables.
+# Called by both dev.yml (for pre-release builds) and release.yml (for release builds).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version string for the build (e.g. 1.0.0 or 0.0.0-dev.abc1234)'
+        required: false
+        type: string
+        default: '0.0.0-test'
+      is_release:
+        description: 'Whether this is a release build (affects artifact retention: 1 day vs 14 days)'
+        required: false
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        description: 'Version string for the build'
+        required: true
+        type: string
+      is_release:
+        description: 'Whether this is a release build (affects artifact retention)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Build native executable for Linux x64
+  # ---------------------------------------------------------------------------
+  build-linux-native:
+    name: Build Linux native executable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GraalVM installation
+        run: |
+          echo "JAVA_HOME: $JAVA_HOME"
+          java -version
+          native-image --version
+
+      - name: Build native executable
+        run: |
+          VERSION='${{ inputs.version }}'
+          mkdir -p build
+
+          echo "Building native executable for Linux..."
+          native-image \
+            -jar files/EW-Unified-4.0.005-FIPS.jar \
+            -o build/encryption-wizard \
+            -H:Name=encryption-wizard \
+            -H:ConfigurationFileDirectories=config/graalvm \
+            --no-fallback \
+            --enable-url-protocols=http,https \
+            --initialize-at-build-time=org.slf4j \
+            --initialize-at-build-time=ch.qos.logback \
+            -H:+ReportExceptionStackTraces \
+            --verbose \
+            2>&1 | tee native-image-build.log || {
+              echo "Native image build failed, checking for fallback..."
+              if grep -q "Fallback" native-image-build.log; then
+                echo "Build required fallback - this means some reflection/resources are missing"
+              fi
+              exit 1
+            }
+
+          # Create distributable archive
+          cd build
+          chmod +x encryption-wizard
+          tar -czvf "EncryptionWizard-${VERSION}-linux-x64-native.tar.gz" encryption-wizard
+          rm encryption-wizard
+
+      - name: Upload Linux native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-native-artifacts
+          path: build/EncryptionWizard-*-linux-x64-native.tar.gz
+          retention-days: ${{ inputs.is_release && 1 || 14 }}
+
+  # ---------------------------------------------------------------------------
+  # Build native executable for macOS x64
+  # ---------------------------------------------------------------------------
+  build-macos-x64-native:
+    name: Build macOS x64 native executable
+    runs-on: macos-13
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GraalVM installation
+        run: |
+          echo "JAVA_HOME: $JAVA_HOME"
+          java -version
+          native-image --version
+
+      - name: Build native executable
+        run: |
+          VERSION='${{ inputs.version }}'
+          mkdir -p build
+
+          echo "Building native executable for macOS x64..."
+          native-image \
+            -jar files/EW-Unified-4.0.005-FIPS.jar \
+            -o build/encryption-wizard \
+            -H:Name=encryption-wizard \
+            -H:ConfigurationFileDirectories=config/graalvm \
+            --no-fallback \
+            --enable-url-protocols=http,https \
+            --initialize-at-build-time=org.slf4j \
+            --initialize-at-build-time=ch.qos.logback \
+            -H:+ReportExceptionStackTraces \
+            --verbose
+
+          # Create distributable archive
+          cd build
+          chmod +x encryption-wizard
+          tar -czvf "EncryptionWizard-${VERSION}-macos-x64-native.tar.gz" encryption-wizard
+          rm encryption-wizard
+
+      - name: Upload macOS x64 native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64-native-artifacts
+          path: build/EncryptionWizard-*-macos-x64-native.tar.gz
+          retention-days: ${{ inputs.is_release && 1 || 14 }}
+
+  # ---------------------------------------------------------------------------
+  # Build native executable for macOS ARM64 (Apple Silicon)
+  # ---------------------------------------------------------------------------
+  build-macos-arm64-native:
+    name: Build macOS ARM64 native executable
+    runs-on: macos-14
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GraalVM installation
+        run: |
+          echo "JAVA_HOME: $JAVA_HOME"
+          java -version
+          native-image --version
+
+      - name: Build native executable
+        run: |
+          VERSION='${{ inputs.version }}'
+          mkdir -p build
+
+          echo "Building native executable for macOS ARM64..."
+          native-image \
+            -jar files/EW-Unified-4.0.005-FIPS.jar \
+            -o build/encryption-wizard \
+            -H:Name=encryption-wizard \
+            -H:ConfigurationFileDirectories=config/graalvm \
+            --no-fallback \
+            --enable-url-protocols=http,https \
+            --initialize-at-build-time=org.slf4j \
+            --initialize-at-build-time=ch.qos.logback \
+            -H:+ReportExceptionStackTraces \
+            --verbose
+
+          # Create distributable archive
+          cd build
+          chmod +x encryption-wizard
+          tar -czvf "EncryptionWizard-${VERSION}-macos-arm64-native.tar.gz" encryption-wizard
+          rm encryption-wizard
+
+      - name: Upload macOS ARM64 native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-native-artifacts
+          path: build/EncryptionWizard-*-macos-arm64-native.tar.gz
+          retention-days: ${{ inputs.is_release && 1 || 14 }}
+
+  # ---------------------------------------------------------------------------
+  # Build native executable for Windows x64
+  # ---------------------------------------------------------------------------
+  build-windows-native:
+    name: Build Windows native executable
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up GraalVM
+        uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '21'
+          distribution: 'graalvm'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify GraalVM installation
+        shell: pwsh
+        run: |
+          Write-Host "JAVA_HOME: $env:JAVA_HOME"
+          java -version
+          native-image --version
+
+      - name: Set up Visual Studio environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build native executable
+        shell: pwsh
+        run: |
+          $version = '${{ inputs.version }}'
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+
+          Write-Host "Building native executable for Windows..."
+          native-image `
+            -jar files/EW-Unified-4.0.005-FIPS.jar `
+            -o build/encryption-wizard `
+            -H:Name=encryption-wizard `
+            -H:ConfigurationFileDirectories=config/graalvm `
+            --no-fallback `
+            --enable-url-protocols=http,https `
+            --initialize-at-build-time=org.slf4j `
+            --initialize-at-build-time=ch.qos.logback `
+            -H:+ReportExceptionStackTraces `
+            --verbose
+
+          if (-not (Test-Path 'build\encryption-wizard.exe')) {
+            throw "Native image build failed - no executable produced"
+          }
+
+          # Create distributable archive
+          Compress-Archive -Path build\encryption-wizard.exe -DestinationPath "build\EncryptionWizard-${version}-windows-x64-native.zip"
+          Remove-Item build\encryption-wizard.exe
+
+      - name: Upload Windows native artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-native-artifacts
+          path: build/EncryptionWizard-*-windows-x64-native.zip
+          retention-days: ${{ inputs.is_release && 1 || 14 }}

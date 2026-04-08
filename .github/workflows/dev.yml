@@ -5,6 +5,7 @@ name: Development Build
 # create a GitHub Release – artifacts are uploaded to the workflow run
 # instead so they can be downloaded and tested directly.
 # The container image is pushed to ghcr.io with a dev-<sha> tag.
+# Also builds GraalVM native executables for all platforms.
 
 on:
   push:
@@ -281,3 +282,34 @@ jobs:
           name: linux-artifacts
           path: build/EncryptionWizard-*-Linux.run
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Job 3: Compute version for native builds
+  # ---------------------------------------------------------------------------
+  compute-version:
+    name: Compute build version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+    steps:
+      - name: Determine build version
+        id: version
+        run: |
+          SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
+          echo "VERSION=0.0.0-dev.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------
+  # Job 4: GraalVM Native Executables (Linux, macOS, Windows)
+  # ---------------------------------------------------------------------------
+  build-native:
+    name: Build native executables
+    needs: [compute-version]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/native-build.yml
+    with:
+      version: ${{ needs.compute-version.outputs.version }}
+      is_release: false
+    secrets: inherit
