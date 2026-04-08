@@ -71,7 +71,7 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            --config-file-search-path=config/graalvm \
+            -H:ConfigurationFileDirectories=config/graalvm \
             --no-fallback \
             --enable-url-protocols=https \
             --verbose \
@@ -134,7 +134,7 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            --config-file-search-path=config/graalvm \
+            -H:ConfigurationFileDirectories=config/graalvm \
             --no-fallback \
             --enable-url-protocols=https \
             --verbose
@@ -190,7 +190,7 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            --config-file-search-path=config/graalvm \
+            -H:ConfigurationFileDirectories=config/graalvm \
             --no-fallback \
             --enable-url-protocols=https \
             --verbose
@@ -251,7 +251,7 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar `
             -o build/encryption-wizard `
             -H:Name=encryption-wizard `
-            --config-file-search-path=config/graalvm `
+            -H:ConfigurationFileDirectories=config/graalvm `
             --no-fallback `
             --enable-url-protocols=https `
             --verbose
