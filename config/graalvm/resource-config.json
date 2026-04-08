@@ -1,0 +1,18 @@
+{
+  "resources": {
+    "includes": [
+      {"pattern": "META-INF/.*"},
+      {"pattern": "META-INF/services/.*"},
+      {"pattern": "META-INF/MANIFEST.MF"},
+      {"pattern": "META-INF/mailcap.default"},
+      {"pattern": "META-INF/mimetypes.default"},
+      {"pattern": "res/.*"},
+      {"pattern": "res/images/.*"},
+      {"pattern": ".*\\.properties"},
+      {"pattern": ".*\\.xml"},
+      {"pattern": "logback\\.xml"},
+      {"pattern": "logback-test\\.xml"}
+    ]
+  },
+  "bundles": []
+}
