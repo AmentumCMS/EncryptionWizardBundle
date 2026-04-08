@@ -8,14 +8,12 @@ on:
     inputs:
       ew_version:
         description: 'Encryption Wizard version (e.g. 4.0.005)'
-        required: false
+        required: true
         type: string
-        default: 'unknown'
       bundle_version:
         description: 'Bundle version string (e.g. 1.0.0 or 0.0.0-dev.abc1234)'
-        required: false
+        required: true
         type: string
-        default: '0.0.0-test'
       is_release:
         description: 'Whether this is a release build (affects artifact retention: 1 day vs 14 days)'
         required: false
