@@ -4,6 +4,10 @@ name: Build Native Executables (GraalVM)
 # Called by both dev.yml (for pre-release builds) and release.yml (for release builds).
 
 on:
+  pull_request:
+    branches:
+      - main
+      - development
   workflow_dispatch:
     inputs:
       version:
@@ -59,7 +63,7 @@ jobs:
 
       - name: Build native executable
         run: |
-          VERSION='${{ inputs.version }}'
+          VERSION="${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
           mkdir -p build
 
           echo "Building native executable for Linux..."
@@ -67,12 +71,9 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            -H:ConfigurationFileDirectories=config/graalvm \
+            --config-file-search-path=config/graalvm \
             --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
+            --enable-url-protocols=https \
             --verbose \
             2>&1 | tee native-image-build.log || {
               echo "Native image build failed, checking for fallback..."
@@ -125,7 +126,7 @@ jobs:
 
       - name: Build native executable
         run: |
-          VERSION='${{ inputs.version }}'
+          VERSION="${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
           mkdir -p build
 
           echo "Building native executable for macOS x64..."
@@ -133,12 +134,9 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            -H:ConfigurationFileDirectories=config/graalvm \
+            --config-file-search-path=config/graalvm \
             --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
+            --enable-url-protocols=https \
             --verbose
 
           # Create distributable archive
@@ -184,7 +182,7 @@ jobs:
 
       - name: Build native executable
         run: |
-          VERSION='${{ inputs.version }}'
+          VERSION="${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
           mkdir -p build
 
           echo "Building native executable for macOS ARM64..."
@@ -192,12 +190,9 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar \
             -o build/encryption-wizard \
             -H:Name=encryption-wizard \
-            -H:ConfigurationFileDirectories=config/graalvm \
+            --config-file-search-path=config/graalvm \
             --no-fallback \
-            --enable-url-protocols=http,https \
-            --initialize-at-build-time=org.slf4j \
-            --initialize-at-build-time=ch.qos.logback \
-            -H:+ReportExceptionStackTraces \
+            --enable-url-protocols=https \
             --verbose
 
           # Create distributable archive
@@ -248,7 +243,7 @@ jobs:
       - name: Build native executable
         shell: pwsh
         run: |
-          $version = '${{ inputs.version }}'
+          $version = "${{ inputs.version || format('0.0.0-pr.{0}', github.run_number) }}"
           New-Item -ItemType Directory -Force -Path build | Out-Null
 
           Write-Host "Building native executable for Windows..."
@@ -256,12 +251,9 @@ jobs:
             -jar files/EW-Unified-4.0.005-FIPS.jar `
             -o build/encryption-wizard `
             -H:Name=encryption-wizard `
-            -H:ConfigurationFileDirectories=config/graalvm `
+            --config-file-search-path=config/graalvm `
             --no-fallback `
-            --enable-url-protocols=http,https `
-            --initialize-at-build-time=org.slf4j `
-            --initialize-at-build-time=ch.qos.logback `
-            -H:+ReportExceptionStackTraces `
+            --enable-url-protocols=https `
             --verbose
 
           if (-not (Test-Path 'build\encryption-wizard.exe')) {
