@@ -1,0 +1,121 @@
+name: Build and Release
+
+# Runs on version tags pushed to the main branch (e.g. v1.0.0).
+# Builds the Launch4j EXE launcher, bundles the JRE, creates an Inno Setup
+# installer, and publishes a GitHub Release with the installer as an artifact.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  build-and-release:
+    name: Build installer and publish release
+    runs-on: windows-latest
+    permissions:
+      contents: write   # required to create GitHub Releases
+
+    steps:
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Determine version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}' -replace '^v', ''
+          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Building version: $version"
+
+      # -----------------------------------------------------------------------
+      - name: Cache Launch4j
+        id: cache-launch4j
+        uses: actions/cache@v4
+        with:
+          path: launch4j
+          key: launch4j-3.50-win32
+
+      - name: Download Launch4j
+        if: steps.cache-launch4j.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $url = 'https://sourceforge.net/projects/launch4j/files/launch4j-3/3.50/launch4j-3.50-win32.zip/download'
+          Invoke-WebRequest -Uri $url -OutFile launch4j.zip -UserAgent 'Wget/1.21'
+          Expand-Archive -Path launch4j.zip -DestinationPath .
+          Remove-Item launch4j.zip
+
+      # -----------------------------------------------------------------------
+      - name: Cache JRE (Temurin 21)
+        id: cache-jre
+        uses: actions/cache@v4
+        with:
+          path: jre
+          key: temurin-jre-21-windows-x64
+
+      - name: Download JRE (Eclipse Temurin 21)
+        if: steps.cache-jre.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $jreUrl = 'https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse'
+          Invoke-WebRequest -Uri $jreUrl -OutFile jre.zip
+          Expand-Archive -Path jre.zip -DestinationPath jre-temp
+          $jreDir = Get-ChildItem -Path jre-temp -Directory | Select-Object -First 1
+          Move-Item -Path $jreDir.FullName -Destination jre
+          Remove-Item -Recurse -Force jre-temp
+          Remove-Item jre.zip
+
+      # -----------------------------------------------------------------------
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      # -----------------------------------------------------------------------
+      - name: Prepare build directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path build | Out-Null
+
+      # -----------------------------------------------------------------------
+      - name: Update version info in Launch4j config
+        shell: pwsh
+        run: |
+          $version    = '${{ steps.version.outputs.VERSION }}'
+          $v4         = "$version.0"
+          $content    = Get-Content -Path config/launch4j.xml -Raw
+          $content    = $content -replace '<fileVersion>[^<]+</fileVersion>',       "<fileVersion>$v4</fileVersion>"
+          $content    = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',  "<txtFileVersion>$version</txtFileVersion>"
+          $content    = $content -replace '<productVersion>[^<]+</productVersion>',  "<productVersion>$v4</productVersion>"
+          $content    = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          Set-Content -Path config/launch4j.xml -Value $content
+          Write-Host "Version info set to $version"
+
+      # -----------------------------------------------------------------------
+      - name: Build EXE with Launch4j
+        shell: pwsh
+        run: |
+          & .\launch4j\launch4jc.exe config\launch4j.xml
+          if (-not (Test-Path 'build\EncryptionWizard.exe')) {
+            throw "Launch4j did not produce build\EncryptionWizard.exe"
+          }
+          Write-Host "EXE created: build\EncryptionWizard.exe"
+
+      # -----------------------------------------------------------------------
+      - name: Build installer with Inno Setup
+        shell: pwsh
+        run: |
+          $version = '${{ steps.version.outputs.VERSION }}'
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$version config\installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+          Write-Host "Installer created: build\EncryptionWizard-$version-Setup.exe"
+
+      # -----------------------------------------------------------------------
+      - name: Create GitHub Release and upload installer
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Encryption Wizard v${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: build/EncryptionWizard-*-Setup.exe

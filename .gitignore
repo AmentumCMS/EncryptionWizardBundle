@@ -1,0 +1,9 @@
+# Build output directory
+/build/
+
+# Downloaded tools and JRE (fetched by CI workflows)
+/launch4j/
+/launch4j.zip
+/jre/
+/jre.zip
+/jre-temp/

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<launch4jConfig>
+  <!--
+    Launch4j configuration for Encryption Wizard.
+
+    JAR file:    files/EW-Unified-4.0.005-FIPS.jar  (repo root)
+    Output EXE:  build/EncryptionWizard.exe
+
+    The bundled JRE is expected at a sub-directory named "jre/" relative to
+    the EXE at runtime.  The CI workflows download and place the JRE there
+    automatically before running the installer.
+  -->
+
+  <!-- Embed the JAR inside the EXE -->
+  <dontWrapJar>false</dontWrapJar>
+  <headerType>gui</headerType>
+
+  <jar>files/EW-Unified-4.0.005-FIPS.jar</jar>
+  <outfile>build/EncryptionWizard.exe</outfile>
+
+  <errTitle>Encryption Wizard</errTitle>
+  <cmdLine></cmdLine>
+  <chdir>.</chdir>
+  <priority>normal</priority>
+  <downloadUrl>https://adoptium.net/</downloadUrl>
+  <supportUrl></supportUrl>
+  <stayAlive>false</stayAlive>
+  <restartOnCrash>false</restartOnCrash>
+  <manifest></manifest>
+
+  <jre>
+    <!-- Path to bundled JRE, relative to the installed EXE location -->
+    <path>jre</path>
+    <bundledJre64Bit>true</bundledJre64Bit>
+    <bundledJreAsFallback>false</bundledJreAsFallback>
+    <minVersion>21.0.0</minVersion>
+    <jdkPreference>preferJre</jdkPreference>
+    <initialHeapSize>256</initialHeapSize>
+    <maxHeapSize>512</maxHeapSize>
+  </jre>
+
+  <versionInfo>
+    <!-- Version fields are updated dynamically by the CI workflow -->
+    <fileVersion>1.0.0.0</fileVersion>
+    <txtFileVersion>1.0.0</txtFileVersion>
+    <fileDescription>Encryption Wizard</fileDescription>
+    <copyright>Copyright (C) AmentumCMS</copyright>
+    <productVersion>1.0.0.0</productVersion>
+    <txtProductVersion>1.0.0</txtProductVersion>
+    <productName>Encryption Wizard</productName>
+    <internalName>EncryptionWizard</internalName>
+    <originalFilename>EncryptionWizard.exe</originalFilename>
+  </versionInfo>
+</launch4jConfig>
