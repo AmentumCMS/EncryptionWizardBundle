@@ -121,13 +121,15 @@ jobs:
           $version = '${{ steps.version.outputs.VERSION }}'
           # Use a safe four-part version for the Windows EXE manifest (branch builds use 0.0.0.0)
           $v4      = '0.0.0.0'
+          # Launch4j limits free-form version strings to 50 characters
+          $txtVersion = if ($version.Length -gt 50) { $version.Substring(0, 50) } else { $version }
           $content = Get-Content -Path config/launch4j.xml -Raw
           $content = $content -replace '<fileVersion>[^<]+</fileVersion>',            "<fileVersion>$v4</fileVersion>"
-          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',       "<txtFileVersion>$version</txtFileVersion>"
+          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',       "<txtFileVersion>$txtVersion</txtFileVersion>"
           $content = $content -replace '<productVersion>[^<]+</productVersion>',       "<productVersion>$v4</productVersion>"
-          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$txtVersion</txtProductVersion>"
           Set-Content -Path config/launch4j.xml -Value $content
-          Write-Host "Version info set to $version"
+          Write-Host "Version info set to $txtVersion"
 
       # -----------------------------------------------------------------------
       - name: Build EXE with Launch4j
