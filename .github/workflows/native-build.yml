@@ -40,7 +40,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -87,7 +87,7 @@ jobs:
           rm encryption-wizard
 
       - name: Upload Linux native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-native-artifacts
           path: build/EncryptionWizard-*-linux-x64-native.tar.gz
@@ -104,7 +104,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -144,7 +144,7 @@ jobs:
           rm encryption-wizard
 
       - name: Upload macOS x64 native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-x64-native-artifacts
           path: build/EncryptionWizard-*-macos-x64-native.tar.gz
@@ -161,7 +161,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -201,7 +201,7 @@ jobs:
           rm encryption-wizard
 
       - name: Upload macOS ARM64 native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-arm64-native-artifacts
           path: build/EncryptionWizard-*-macos-arm64-native.tar.gz
@@ -218,7 +218,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up GraalVM
         uses: graalvm/setup-graalvm@v1
@@ -265,7 +265,7 @@ jobs:
           Remove-Item build\encryption-wizard.exe
 
       - name: Upload Windows native artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-native-artifacts
           path: build/EncryptionWizard-*-windows-x64-native.zip
