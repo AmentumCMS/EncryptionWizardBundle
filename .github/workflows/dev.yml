@@ -190,6 +190,10 @@ jobs:
           Copy-Item "files\Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$archiveDir\"
           Copy-Item "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"         "$archiveDir\"
           Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
+          Copy-Item "files\Create_Desktop_Shortcut.vbs"                        "$archiveDir\"
+          Copy-Item "files\Create_Desktop_Shortcut.ps1"                        "$archiveDir\"
+          Copy-Item "files\Create_Desktop_Shortcut.bat"                        "$archiveDir\"
+          Copy-Item "files\SHORTCUT_CREATION_README.md"                        "$archiveDir\"
 
           Compress-Archive -Path "$archiveDir\*" `
             -DestinationPath "build\EncryptionWizard-${combinedVersion}-Windows.zip" `

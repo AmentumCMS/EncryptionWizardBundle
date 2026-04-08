@@ -95,6 +95,12 @@ Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}";
 ; Homepage shortcut
 Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
+; Desktop shortcut creation utilities
+Source: "..\files\Create_Desktop_Shortcut.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Create_Desktop_Shortcut.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Create_Desktop_Shortcut.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\SHORTCUT_CREATION_README.md"; DestDir: "{app}"; Flags: ignoreversion
+
 [Icons]
 Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"
 Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
