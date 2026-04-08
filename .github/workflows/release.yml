@@ -502,6 +502,12 @@ jobs:
           name: linux-native-artifacts
           path: release-artifacts
 
+      - name: Download macOS x64 native artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: macos-x64-native-artifacts
+          path: release-artifacts
+
       - name: Download macOS ARM64 native artifacts
         uses: actions/download-artifact@v8
         with:
