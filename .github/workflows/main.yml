@@ -480,6 +480,7 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          load: true
           tags: ghcr.io/${{ steps.version.outputs.IMAGE_OWNER }}/encryption-wizard:${{ steps.version.outputs.IMAGE_TAG }}
           labels: |
             org.opencontainers.image.title=Encryption Wizard
@@ -490,6 +491,17 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
+      - name: Export container image as downloadable artifact
+        run: |
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
+          IMAGE_TAG="ghcr.io/${{ steps.version.outputs.IMAGE_OWNER }}/encryption-wizard:${{ steps.version.outputs.IMAGE_TAG }}"
+          
+          echo "Exporting container image: $IMAGE_TAG"
+          docker save "$IMAGE_TAG" | gzip -9 > "build/EncryptionWizard-${COMBINED_VERSION}-docker-image.tar.gz"
+          echo "Docker image exported: $(du -sh "build/EncryptionWizard-${COMBINED_VERSION}-docker-image.tar.gz" | cut -f1)"
+
       # -----------------------------------------------------------------------
       - name: Upload Linux artifact
         uses: actions/upload-artifact@v7
@@ -498,6 +510,7 @@ jobs:
           path: |
             build/EncryptionWizard-*-Linux.run
             build/EncryptionWizard-*-Linux.tar.gz
+            build/EncryptionWizard-*-docker-image.tar.gz
           retention-days: 14
 
   # ---------------------------------------------------------------------------

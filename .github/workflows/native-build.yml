@@ -260,12 +260,13 @@ jobs:
 
           Write-Host "Building native executable for Windows..."
           Write-Host "EW Version: $ewVersion, Bundle Version: $bundleVersion"
+          # Note: GraalVM native-image does not support embedding icons directly.
+          # The icon is included as a separate file in the distribution archive.
           native-image `
             -jar files/EW-Unified-4.0.005-FIPS.jar `
             -H:Name=encryption-wizard `
             -H:Path=build `
             -H:ConfigurationFileDirectories=config/graalvm `
-            -H:NativeImageIcon=build/icon.ico `
             --no-fallback `
             --enable-url-protocols=https `
             --verbose
