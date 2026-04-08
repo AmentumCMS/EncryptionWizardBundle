@@ -289,6 +289,8 @@ jobs:
   compute-version:
     name: Compute build version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.VERSION }}
     steps:
@@ -304,6 +306,8 @@ jobs:
   build-native:
     name: Build native executables
     needs: [compute-version]
+    permissions:
+      contents: read
     uses: ./.github/workflows/native-build.yml
     with:
       version: ${{ needs.compute-version.outputs.version }}
