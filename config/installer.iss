@@ -100,9 +100,19 @@ Source: "..\files\Getting_Started_with_Encryption_Wizard_4.0.005.txt"; DestDir: 
 ; Fallback JAR launcher (for users who already have a JRE in PATH)
 Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}"; Flags: ignoreversion
 
+; Direct launchers using bundled JRE
+Source: "..\files\Launch_Encryption_Wizard.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Launch_Encryption_Wizard.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Launch_Encryption_Wizard.vbs"; DestDir: "{app}"; Flags: ignoreversion
+
 ; Homepage shortcut
 Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
+; Desktop shortcut creation utilities
+Source: "..\files\Create_Desktop_Shortcut.vbs"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Create_Desktop_Shortcut.ps1"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Create_Desktop_Shortcut.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\SHORTCUT_CREATION_README.md"; DestDir: "{app}"; Flags: ignoreversion
 ; Application graphics (icon and splash image extracted from JAR)
 Source: "..\build\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\splash.png"; DestDir: "{app}"; Flags: ignoreversion
