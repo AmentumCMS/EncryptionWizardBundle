@@ -15,8 +15,8 @@
   <dontWrapJar>false</dontWrapJar>
   <headerType>gui</headerType>
 
-  <jar>files/EW-Unified-4.0.005-FIPS.jar</jar>
-  <outfile>build/EncryptionWizard.exe</outfile>
+  <jar>../files/EW-Unified-4.0.005-FIPS.jar</jar>
+  <outfile>../build/EncryptionWizard.exe</outfile>
 
   <errTitle>Encryption Wizard</errTitle>
   <cmdLine></cmdLine>
