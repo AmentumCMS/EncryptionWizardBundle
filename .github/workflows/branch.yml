@@ -151,11 +151,42 @@ jobs:
           Write-Host "Installer created in build\"
 
       # -----------------------------------------------------------------------
+      - name: Build Windows portable archive (ZIP)
+        shell: pwsh
+        run: |
+          $version    = '${{ steps.version.outputs.VERSION }}'
+          $archiveDir = 'archive-win'
+          New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
+
+          # Application EXE (JAR embedded by Launch4j)
+          Copy-Item "build\EncryptionWizard.exe" "$archiveDir\"
+
+          # Bundled JRE
+          Copy-Item -Recurse "jre" "$archiveDir\jre"
+
+          # Documentation and support files
+          Copy-Item "files\Encryption Wizard User Guide v405.docx"             "$archiveDir\"
+          Copy-Item "files\Encryption Wizard User Guide v405.pdf"              "$archiveDir\"
+          Copy-Item "files\Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$archiveDir\"
+          Copy-Item "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"         "$archiveDir\"
+          Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
+
+          Compress-Archive -Path "$archiveDir\*" `
+            -DestinationPath "build\EncryptionWizard-${version}-Windows.zip" `
+            -CompressionLevel Optimal
+          Remove-Item -Recurse -Force $archiveDir
+
+          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-${version}-Windows.zip").Length / 1MB, 1)
+          Write-Host "Windows archive created: build\EncryptionWizard-${version}-Windows.zip ($sizeMB MB)"
+
+      # -----------------------------------------------------------------------
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
           name: windows-artifacts
-          path: build/EncryptionWizard-*-Setup.exe
+          path: |
+            build/EncryptionWizard-*-Setup.exe
+            build/EncryptionWizard-*-Windows.zip
           retention-days: 14
 
   # ---------------------------------------------------------------------------
@@ -255,9 +286,45 @@ jobs:
           echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
 
       # -----------------------------------------------------------------------
+      - name: Build Linux portable archive (tar.gz)
+        run: |
+          VERSION='${{ steps.version.outputs.VERSION }}'
+          ARCHIVE_DIR='archive-linux'
+          mkdir -p "$ARCHIVE_DIR"
+
+          # Application JAR
+          cp files/EW-Unified-4.0.005-FIPS.jar "$ARCHIVE_DIR/"
+
+          # Bundled JRE
+          cp -r jre/ "$ARCHIVE_DIR/jre/"
+
+          # Documentation and support files
+          cp "files/Encryption Wizard User Guide v405.docx"             "$ARCHIVE_DIR/"
+          cp "files/Encryption Wizard User Guide v405.pdf"              "$ARCHIVE_DIR/"
+          cp "files/Getting_Started_with_Encryption_Wizard_4.0.005.txt" "$ARCHIVE_DIR/"
+          cp "files/Encryption Wizard homepage.url"                     "$ARCHIVE_DIR/"
+
+          # Launcher script
+          cat > "$ARCHIVE_DIR/run.sh" << 'LAUNCHER'
+          #!/bin/bash
+          DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+          JAR=$(ls "$DIR"/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR" ]; then echo "Error: No EW-*.jar found in $DIR" >&2; exit 1; fi
+          exec "$DIR/jre/bin/java" -jar "$JAR" "$@"
+          LAUNCHER
+          chmod +x "$ARCHIVE_DIR/run.sh"
+
+          tar -czf "build/EncryptionWizard-${VERSION}-Linux.tar.gz" -C "$ARCHIVE_DIR" .
+          rm -rf "$ARCHIVE_DIR"
+
+          echo "Linux archive: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.tar.gz" | cut -f1)"
+
+      # -----------------------------------------------------------------------
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v7
         with:
           name: linux-artifacts
-          path: build/EncryptionWizard-*-Linux.run
+          path: |
+            build/EncryptionWizard-*-Linux.run
+            build/EncryptionWizard-*-Linux.tar.gz
           retention-days: 14
