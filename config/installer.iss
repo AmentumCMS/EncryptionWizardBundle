@@ -51,7 +51,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
 ; Output
-OutputDir=build
+OutputDir=..\build
 OutputBaseFilename=EncryptionWizard-{#AppVersion}-Setup
 
 ; Compression
@@ -73,24 +73,24 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
 ; Main application EXE (JAR is embedded inside by Launch4j)
-Source: "build\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\build\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Bundled JRE – required at runtime by the EXE launcher
-Source: "jre\*"; DestDir: "{app}\jre"; \
+Source: "..\jre\*"; DestDir: "{app}\jre"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; User documentation
-Source: "files\Encryption Wizard User Guide v405.docx"; DestDir: "{app}"; Flags: ignoreversion
-Source: "files\Encryption Wizard User Guide v405.pdf";  DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Encryption Wizard User Guide v405.docx"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Encryption Wizard User Guide v405.pdf";  DestDir: "{app}"; Flags: ignoreversion
 
 ; Quick-start guide
-Source: "files\Getting_Started_with_Encryption_Wizard_4.0.005.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Getting_Started_with_Encryption_Wizard_4.0.005.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Fallback JAR launcher (for users who already have a JRE in PATH)
-Source: "files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Drop_Jar_File_Here_For_Fallback_Launch.bat"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Homepage shortcut
-Source: "files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\files\Encryption Wizard homepage.url"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}";        Filename: "{app}\{#AppExeName}"
