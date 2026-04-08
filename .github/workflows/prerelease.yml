@@ -27,21 +27,53 @@ jobs:
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.version.outputs.VERSION }}
+      ew_version: ${{ steps.ew-version.outputs.EW_VERSION }}
+      bundle_version: ${{ steps.version.outputs.BUNDLE_VERSION }}
+      combined_version: ${{ steps.combined.outputs.COMBINED_VERSION }}
     steps:
-      - name: Determine build version
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        run: |
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "Error: No EW-*.jar file found in files directory" >&2
+            exit 1
+          fi
+          EW_VERSION=$(basename "$JAR_FILE" | sed -n 's/EW-[^-]*-\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          if [ -z "$EW_VERSION" ]; then
+            echo "Error: Could not extract version from JAR filename: $(basename "$JAR_FILE")" >&2
+            exit 1
+          fi
+          echo "EW_VERSION=$EW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Encryption Wizard version: $EW_VERSION"
+
+      - name: Determine bundle version
         id: version
         run: |
           SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
           BRANCH=$(echo '${{ github.ref_name }}' | sed 's/[^a-zA-Z0-9]/-/g')
           if [ -n "${{ inputs.prerelease_tag }}" ]; then
-            VERSION="${{ inputs.prerelease_tag }}"
-            VERSION="${VERSION#v}"
+            BUNDLE_VERSION="${{ inputs.prerelease_tag }}"
+            BUNDLE_VERSION="${BUNDLE_VERSION#v}"
           else
-            VERSION="0.0.0-${BRANCH}.${SHORT_SHA}"
+            BUNDLE_VERSION="0.0.0-${BRANCH}.${SHORT_SHA}"
           fi
-          echo "VERSION=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Build version: $VERSION"
+          echo "BUNDLE_VERSION=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Bundle version: $BUNDLE_VERSION"
+
+      - name: Create combined version
+        id: combined
+        run: |
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
+          echo "COMBINED_VERSION=$COMBINED_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Combined version: $COMBINED_VERSION"
 
   # ---------------------------------------------------------------------------
   # Build native executables
@@ -53,7 +85,8 @@ jobs:
       contents: read
     uses: ./.github/workflows/native-build.yml
     with:
-      version: ${{ needs.compute-version.outputs.version }}
+      ew_version: ${{ needs.compute-version.outputs.ew_version }}
+      bundle_version: ${{ needs.compute-version.outputs.bundle_version }}
       is_release: false
     secrets: inherit
 
@@ -97,11 +130,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.prerelease_tag }}
-          name: Encryption Wizard ${{ inputs.prerelease_tag }} (Pre-release)
+          name: Encryption Wizard ${{ needs.compute-version.outputs.combined_version }} (Pre-release)
           body: |
             ## Pre-release Build
 
             This is a pre-release build from branch `${{ github.ref_name }}` at commit `${{ github.sha }}`.
+
+            **Encryption Wizard Version:** ${{ needs.compute-version.outputs.ew_version }}
+            **Bundle Version:** ${{ needs.compute-version.outputs.bundle_version }}
 
             ### Native Executables (GraalVM)
             These are standalone executables that do not require Java to be installed:
