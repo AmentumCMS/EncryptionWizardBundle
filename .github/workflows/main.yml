@@ -30,14 +30,31 @@ jobs:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine build version
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        shell: pwsh
+        run: |
+          $jarFile = Get-ChildItem -Path "files" -Filter "EW-*.jar" | Select-Object -First 1
+          if (-not $jarFile) {
+            throw "No EW-*.jar file found in files directory"
+          }
+          # Extract version from filename pattern: EW-Unified-X.Y.Z-FIPS.jar
+          if ($jarFile.Name -match 'EW-[^-]+-([0-9]+\.[0-9]+\.[0-9]+)') {
+            $ewVersion = $Matches[1]
+          } else {
+            throw "Could not extract version from JAR filename: $($jarFile.Name)"
+          }
+          echo "EW_VERSION=$ewVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Encryption Wizard version: $ewVersion"
+
+      - name: Determine bundle version
         id: version
         shell: pwsh
         run: |
           $shortSha = '${{ github.sha }}'.Substring(0, 7)
-          $version  = "0.0.0-pre.$shortSha"
-          echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "Build version: $version"
+          $bundleVersion  = "0.0.0-pre.$shortSha"
+          echo "BUNDLE_VERSION=$bundleVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "Bundle version: $bundleVersion"
 
       # -----------------------------------------------------------------------
       - name: Cache Launch4j
@@ -116,16 +133,18 @@ jobs:
       - name: Update version info in Launch4j config
         shell: pwsh
         run: |
-          $version = '${{ steps.version.outputs.VERSION }}'
+          $ewVersion = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
           # Use a safe four-part version for the Windows EXE manifest (pre builds use 0.0.0.0)
           $v4      = '0.0.0.0'
           $content = Get-Content -Path config/launch4j.xml -Raw
           $content = $content -replace '<fileVersion>[^<]+</fileVersion>',           "<fileVersion>$v4</fileVersion>"
-          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',      "<txtFileVersion>$version</txtFileVersion>"
+          $content = $content -replace '<txtFileVersion>[^<]+</txtFileVersion>',      "<txtFileVersion>$combinedVersion</txtFileVersion>"
           $content = $content -replace '<productVersion>[^<]+</productVersion>',      "<productVersion>$v4</productVersion>"
-          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$version</txtProductVersion>"
+          $content = $content -replace '<txtProductVersion>[^<]+</txtProductVersion>', "<txtProductVersion>$combinedVersion</txtProductVersion>"
           Set-Content -Path config/launch4j.xml -Value $content
-          Write-Host "Version info set to $version"
+          Write-Host "Version info set to $combinedVersion"
 
       # -----------------------------------------------------------------------
       - name: Build EXE with Launch4j
@@ -141,8 +160,10 @@ jobs:
       - name: Build installer with Inno Setup
         shell: pwsh
         run: |
-          $version = '${{ steps.version.outputs.VERSION }}'
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$version config\installer.iss
+          $ewVersion = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' /DAppVersion=$combinedVersion config\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
           Write-Host "Installer created in build\"
 
@@ -150,7 +171,9 @@ jobs:
       - name: Build Windows portable archive (ZIP)
         shell: pwsh
         run: |
-          $version    = '${{ steps.version.outputs.VERSION }}'
+          $ewVersion     = '${{ steps.ew-version.outputs.EW_VERSION }}'
+          $bundleVersion = '${{ steps.version.outputs.BUNDLE_VERSION }}'
+          $combinedVersion = "EW-${ewVersion}_Bundle-${bundleVersion}"
           $archiveDir = 'archive-win'
           New-Item -ItemType Directory -Force -Path $archiveDir | Out-Null
 
@@ -168,12 +191,12 @@ jobs:
           Copy-Item "files\Encryption Wizard homepage.url"                     "$archiveDir\"
 
           Compress-Archive -Path "$archiveDir\*" `
-            -DestinationPath "build\EncryptionWizard-${version}-Windows.zip" `
+            -DestinationPath "build\EncryptionWizard-${combinedVersion}-Windows.zip" `
             -CompressionLevel Optimal
           Remove-Item -Recurse -Force $archiveDir
 
-          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-${version}-Windows.zip").Length / 1MB, 1)
-          Write-Host "Windows archive created: build\EncryptionWizard-${version}-Windows.zip ($sizeMB MB)"
+          $sizeMB = [math]::Round((Get-Item "build\EncryptionWizard-${combinedVersion}-Windows.zip").Length / 1MB, 1)
+          Write-Host "Windows archive created: build\EncryptionWizard-${combinedVersion}-Windows.zip ($sizeMB MB)"
 
       # -----------------------------------------------------------------------
       - name: Upload Windows artifacts
@@ -203,14 +226,32 @@ jobs:
           lfs: true
 
       # -----------------------------------------------------------------------
-      - name: Determine build version
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        run: |
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "Error: No EW-*.jar file found in files directory" >&2
+            exit 1
+          fi
+          # Extract version from filename pattern: EW-Unified-X.Y.Z-FIPS.jar
+          EW_VERSION=$(basename "$JAR_FILE" | sed -n 's/EW-[^-]*-\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          if [ -z "$EW_VERSION" ]; then
+            echo "Error: Could not extract version from JAR filename: $(basename "$JAR_FILE")" >&2
+            exit 1
+          fi
+          echo "EW_VERSION=$EW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Encryption Wizard version: $EW_VERSION"
+
+      - name: Determine bundle version
         id: version
         run: |
           SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
-          echo "VERSION=0.0.0-pre.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          BUNDLE_VERSION="0.0.0-pre.${SHORT_SHA}"
+          echo "BUNDLE_VERSION=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
           echo "IMAGE_TAG=pre-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
           echo "IMAGE_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
-          echo "Build version: 0.0.0-pre.${SHORT_SHA}"
+          echo "Bundle version: $BUNDLE_VERSION"
 
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
@@ -258,7 +299,9 @@ jobs:
 
       - name: Build Linux installer (makeself)
         run: |
-          VERSION='${{ steps.version.outputs.VERSION }}'
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
           mkdir -p build payload
 
           cp files/EW-Unified-4.0.005-FIPS.jar payload/
@@ -276,17 +319,19 @@ jobs:
             --nox11 \
             --sha256 \
             payload/ \
-            "build/EncryptionWizard-${VERSION}-Linux.run" \
-            "Encryption Wizard ${VERSION}" \
+            "build/EncryptionWizard-${COMBINED_VERSION}-Linux.run" \
+            "Encryption Wizard ${COMBINED_VERSION}" \
             ./run.sh
 
           rm -rf payload
-          echo "Linux installer: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.run" | cut -f1)"
+          echo "Linux installer: $(du -sh "build/EncryptionWizard-${COMBINED_VERSION}-Linux.run" | cut -f1)"
 
       # -----------------------------------------------------------------------
       - name: Build Linux portable archive (tar.gz)
         run: |
-          VERSION='${{ steps.version.outputs.VERSION }}'
+          EW_VERSION='${{ steps.ew-version.outputs.EW_VERSION }}'
+          BUNDLE_VERSION='${{ steps.version.outputs.BUNDLE_VERSION }}'
+          COMBINED_VERSION="EW-${EW_VERSION}_Bundle-${BUNDLE_VERSION}"
           ARCHIVE_DIR='archive-linux'
           mkdir -p "$ARCHIVE_DIR"
 
@@ -312,10 +357,10 @@ jobs:
           LAUNCHER
           chmod +x "$ARCHIVE_DIR/run.sh"
 
-          tar -czf "build/EncryptionWizard-${VERSION}-Linux.tar.gz" -C "$ARCHIVE_DIR" .
+          tar -czf "build/EncryptionWizard-${COMBINED_VERSION}-Linux.tar.gz" -C "$ARCHIVE_DIR" .
           rm -rf "$ARCHIVE_DIR"
 
-          echo "Linux archive: $(du -sh "build/EncryptionWizard-${VERSION}-Linux.tar.gz" | cut -f1)"
+          echo "Linux archive: $(du -sh "build/EncryptionWizard-${COMBINED_VERSION}-Linux.tar.gz" | cut -f1)"
 
       # -----------------------------------------------------------------------
       - name: Log in to GitHub Container Registry
@@ -338,7 +383,9 @@ jobs:
           labels: |
             org.opencontainers.image.title=Encryption Wizard
             org.opencontainers.image.description=FIPS-compliant encryption application
-            org.opencontainers.image.version=${{ steps.version.outputs.VERSION }}
+            org.opencontainers.image.version=EW-${{ steps.ew-version.outputs.EW_VERSION }}_Bundle-${{ steps.version.outputs.BUNDLE_VERSION }}
+            org.opencontainers.image.ew-version=${{ steps.ew-version.outputs.EW_VERSION }}
+            org.opencontainers.image.bundle-version=${{ steps.version.outputs.BUNDLE_VERSION }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
@@ -364,12 +411,35 @@ jobs:
 
     steps:
       # -----------------------------------------------------------------------
-      - name: Determine build version
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          lfs: false
+
+      - name: Detect EW version from JAR filename
+        id: ew-version
+        run: |
+          JAR_FILE=$(ls files/EW-*.jar 2>/dev/null | head -1)
+          if [ -z "$JAR_FILE" ]; then
+            echo "Error: No EW-*.jar file found in files directory" >&2
+            exit 1
+          fi
+          EW_VERSION=$(basename "$JAR_FILE" | sed -n 's/EW-[^-]*-\([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p')
+          if [ -z "$EW_VERSION" ]; then
+            echo "Error: Could not extract version from JAR filename: $(basename "$JAR_FILE")" >&2
+            exit 1
+          fi
+          echo "EW_VERSION=$EW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Encryption Wizard version: $EW_VERSION"
+
+      - name: Determine bundle version
         id: version
         run: |
           SHORT_SHA=$(echo '${{ github.sha }}' | cut -c1-7)
-          echo "VERSION=0.0.0-pre.${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          BUNDLE_VERSION="0.0.0-pre.${SHORT_SHA}"
+          echo "BUNDLE_VERSION=$BUNDLE_VERSION" >> "$GITHUB_OUTPUT"
           echo "TAG=pre-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Bundle version: $BUNDLE_VERSION"
 
       # -----------------------------------------------------------------------
       - name: Download Windows artifacts
@@ -389,7 +459,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.TAG }}
-          name: Encryption Wizard ${{ steps.version.outputs.VERSION }}
+          name: Encryption Wizard EW-${{ steps.ew-version.outputs.EW_VERSION }}_Bundle-${{ steps.version.outputs.BUNDLE_VERSION }}
           generate_release_notes: true
           draft: false
           prerelease: true
