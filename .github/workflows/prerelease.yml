@@ -32,7 +32,7 @@ jobs:
       combined_version: ${{ steps.combined.outputs.COMBINED_VERSION }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           lfs: false
 
