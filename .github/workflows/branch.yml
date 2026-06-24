@@ -61,7 +61,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache Launch4j
         id: cache-launch4j
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: launch4j
           key: launch4j-3.50-win32
@@ -78,7 +78,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: jdk
           key: temurin-jdk-21-windows-x64
@@ -336,7 +336,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Cache JDK (Temurin 21)
         id: cache-jdk
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: jdk
           key: temurin-jdk-21-linux-x64
